@@ -373,3 +373,180 @@ export const shouldShowMeetingOnDashboard = (
   return true;
 };
 
+export const DEFAULT_KD_COMPULSORY_LEVELS = [
+  "Apprentice level 1",
+  "Apprentice level 2",
+  "Apprentice level 3",
+  "Apprentice",
+  "Intern",
+  "Volunteer beginner level",
+  "Volunteer intermediate level",
+  "Volunteer advanced level",
+  "Trainee Level 1",
+  "Trainee Level 2",
+  "Trainee Level 3",
+  "Trainee",
+  "Global Techie 0",
+  "Global Techie 1",
+  "Global Techie Level 0",
+  "Global Techie Level 1"
+];
+
+export function isKDCompulsoryForLevel(
+  userLevel?: string,
+  compulsoryLevels?: string[]
+): boolean {
+  if (!userLevel) return true; // Default to compulsory if unknown
+  const levelLower = userLevel.toLowerCase().trim();
+
+  // Non-compulsory levels explicitly excluded
+  if (
+    /\bglobal techie\s*(level)?\s*[2-9]\b/i.test(levelLower) ||
+    /\bsenior\b/i.test(levelLower) ||
+    /\blead\b/i.test(levelLower) ||
+    /\bprincipal\b/i.test(levelLower) ||
+    /\bexecutive\b/i.test(levelLower) ||
+    /\bmentor\b/i.test(levelLower) ||
+    /\badmin\b/i.test(levelLower)
+  ) {
+    return false;
+  }
+
+  const activeCompulsoryList = (compulsoryLevels && compulsoryLevels.length > 0)
+    ? compulsoryLevels
+    : DEFAULT_KD_COMPULSORY_LEVELS;
+
+  return activeCompulsoryList.some(comp => {
+    const cLower = comp.toLowerCase().trim();
+    if (!cLower) return false;
+    
+    if (levelLower === cLower) {
+      return true;
+    }
+    
+    // Check key level terms
+    if (levelLower.includes("apprentice")) return true;
+    if (levelLower.includes("intern")) return true;
+    if (levelLower.includes("trainee")) return true;
+    if (levelLower.includes("volunteer")) return true;
+    
+    // Global Techie Level 0 or Level 1
+    if (/\bglobal techie\s*(level)?\s*0\b/i.test(levelLower) || /\blevel 0\b/i.test(levelLower)) return true;
+    if (/\bglobal techie\s*(level)?\s*1\b/i.test(levelLower) || /\blevel 1\b/i.test(levelLower)) return true;
+
+    return false;
+  });
+}
+
+export function checkIsKDOwner(
+  profile?: { id?: string; email?: string; username?: string; fullName?: string; role?: string },
+  microserviceOwners?: Record<string, string>,
+  isAdmin?: boolean
+): boolean {
+  return checkIsSpecificMicroserviceOwner(profile, "kd", microserviceOwners, isAdmin);
+}
+
+export function isAuthorizedForKDTopic(
+  presentation: {
+    presenterUserId?: string;
+    presenterName?: string;
+    assignedMentorUserId?: string;
+    assignedMentorName?: string;
+  },
+  profile?: { id?: string; email?: string; username?: string; fullName?: string; role?: string; status?: string },
+  microserviceOwners?: Record<string, string>,
+  isAdminOverride?: boolean
+): boolean {
+  if (!profile) return false;
+  const isAdmin = Boolean(isAdminOverride || profile.role === "admin" || profile.status === "admin");
+  if (isAdmin) return true;
+
+  // Knowledge Development Microservice Owner
+  const isKDOwner = checkIsKDOwner(profile, microserviceOwners, isAdmin);
+  if (isKDOwner) return true;
+
+  const pId = profile.id;
+  const pName = profile.fullName ? profile.fullName.toLowerCase().trim() : "";
+  const pUser = profile.username ? profile.username.toLowerCase().trim() : "";
+  const pEmail = profile.email ? profile.email.toLowerCase().trim() : "";
+
+  // Presenter
+  if (presentation.presenterUserId && pId && presentation.presenterUserId === pId) return true;
+  if (presentation.presenterName) {
+    const presNameNorm = presentation.presenterName.toLowerCase().trim();
+    if (presNameNorm && (presNameNorm === pName || presNameNorm === pUser || presNameNorm === pEmail)) return true;
+  }
+
+  // Assigned Mentor
+  if (presentation.assignedMentorUserId && pId && presentation.assignedMentorUserId === pId) return true;
+  if (presentation.assignedMentorName) {
+    const mentorNameNorm = presentation.assignedMentorName.toLowerCase().trim();
+    if (mentorNameNorm && (mentorNameNorm === pName || mentorNameNorm === pUser || mentorNameNorm === pEmail)) return true;
+  }
+
+  return false;
+}
+
+export interface MicroserviceDef {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+}
+
+export const ALL_MICROSERVICES_LIST: MicroserviceDef[] = [
+  { id: "kd", name: "Knowledge Development", description: "KD Presentations, Topics, Slides, and Ratings", category: "Core Academic" },
+  { id: "wd", name: "Weekly Drills", description: "Weekly coding challenges, submissions, and grading", category: "Technical Practice" },
+  { id: "standups", name: "Daily Standups & Reports", description: "Daily student check-ins, blocker tracking, and reports", category: "Operations" },
+  { id: "pd", name: "Personal Development", description: "Soft skills, career growth, and personal logs", category: "Growth" },
+  { id: "tech_update", name: "Tech Update", description: "Technical updates, article shares, and tech logs", category: "Technical Practice" },
+  { id: "ke", name: "Knowledge Exchange", description: "Peer-to-peer knowledge sharing and discussions", category: "Collaboration" },
+  { id: "social_influence", name: "Social Influence", description: "Public article shares, blogs, and hackathons", category: "Outreach" },
+  { id: "social_engagement", name: "Social Engagement", description: "Community participation and social activities", category: "Outreach" },
+  { id: "external_events", name: "External Events", description: "External hackathons, tech talks, and webinars", category: "Outreach" },
+];
+
+export function checkIsSpecificMicroserviceOwner(
+  profile?: { id?: string; email?: string; username?: string; fullName?: string; role?: string },
+  serviceId?: string,
+  microserviceOwners?: Record<string, string>,
+  isAdmin?: boolean
+): boolean {
+  if (isAdmin || profile?.role === "admin") return true;
+  if (!profile || !microserviceOwners || !serviceId) return false;
+
+  const ownerVal = microserviceOwners[serviceId] || microserviceOwners[serviceId.toLowerCase()] || "";
+  if (!ownerVal) return false;
+
+  const target = ownerVal.toLowerCase().trim();
+  const userId = (profile.id || "").toLowerCase().trim();
+  const userEmail = (profile.email || "").toLowerCase().trim();
+  const userName = (profile.username || "").toLowerCase().trim();
+  const userFull = (profile.fullName || "").toLowerCase().trim();
+
+  return (
+    userId === target ||
+    userEmail === target ||
+    userName === target ||
+    userFull === target ||
+    ownerVal === profile.id
+  );
+}
+
+export function getUserAssignedMicroservices(
+  profile?: { id?: string; email?: string; username?: string; fullName?: string; role?: string },
+  microserviceOwners?: Record<string, string>
+): MicroserviceDef[] {
+  if (!profile) return [];
+  const isAdmin = profile.role === "admin";
+  if (isAdmin) {
+    return ALL_MICROSERVICES_LIST;
+  }
+
+  return ALL_MICROSERVICES_LIST.filter(ms =>
+    checkIsSpecificMicroserviceOwner(profile, ms.id, microserviceOwners, false)
+  );
+}
+
+
+

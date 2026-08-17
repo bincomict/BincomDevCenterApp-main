@@ -129,6 +129,26 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "userId", "fullName", "education", "occupation", "techExperience", "track", "learningLevel", "previousCourseCompleted", "timestamp"]
+    },
+    "KDPresentation": {
+      "title": "KDPresentation",
+      "description": "Knowledge development presentation assignment schedule.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "dayOfWeek": { "type": "string" },
+        "topic": { "type": "string" },
+        "presenterUserId": { "type": "string" },
+        "presenterName": { "type": "string" },
+        "presenterEmail": { "type": "string" },
+        "assignedMentorUserId": { "type": "string" },
+        "assignedMentorName": { "type": "string" },
+        "status": { "type": "string" },
+        "notes": { "type": "string" },
+        "history": { "type": "array" }
+      },
+      "required": ["id", "date", "presenterName"]
     }
   },
   "firestore": {
@@ -211,6 +231,14 @@
     "/onboardingSubmissions/{submissionId}": {
       "schema": "OnboardingSubmission",
       "description": "Logged details of historical onboarding form submissions."
+    },
+    "/kdPresentations/{id}": {
+      "schema": "KDPresentation",
+      "description": "Knowledge development presentation assignment records."
+    },
+    "/syncLocks/{id}": {
+      "schema": { "$ref": "object" },
+      "description": "Distributed lock records for system tasks."
     }
   }
 }

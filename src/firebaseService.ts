@@ -25,7 +25,7 @@ import {
   onAuthStateChanged
 } from "firebase/auth";
 import { db, auth } from "./firebase";
-import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate } from "./types";
+import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation } from "./types";
 
 export enum OperationType {
   CREATE = 'create',
@@ -368,82 +368,92 @@ export const autoArchiveCompletedMeetings = async (
   const now = new Date();
   const todayStr = getLagosDateString(now);
   const currentMinutes = getLagosMinutesPastMidnight(now);
+  const existingHistIds = new Set(meetingHistory.map(h => h.id));
 
-  // We check which meetings are considered "overdue" (passed scheduled time)
-  const overdueMeetings = meetings.filter((m) => {
+  const meetingsToProcess: Array<{ meeting: any; targetStatus: string; shouldUpdateStatus: boolean }> = [];
+
+  for (const m of meetings) {
     const statusLower = String(m.status || "").trim().toLowerCase();
-    if (statusLower === "completed" || statusLower === "archived") return false;
 
+    // Collect dates
     const dates: string[] = [];
-    if (m.occurrenceDate) {
-      dates.push(m.occurrenceDate);
-    }
+    if (m.occurrenceDate) dates.push(m.occurrenceDate);
     if (m.meetingDates && Array.isArray(m.meetingDates)) {
       m.meetingDates.forEach((d: string) => {
         if (d && !dates.includes(d)) dates.push(d);
       });
     }
 
-    if (dates.length > 0) {
-      const latestDate = dates.reduce((latest, current) => current > latest ? current : latest, dates[0]);
-      if (latestDate < todayStr) {
-        return true;
-      }
-      if (latestDate === todayStr) {
-        const scheduledTimeStr = m.timeString || m.time || m.scheduledStartTime || m.startTime || "09:00 AM";
-        const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
-        const durationStr = m.duration || "30 minutes";
-        const matchDuration = durationStr.match(/(\d+)/);
-        const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
-        const endTimeMinutes = scheduledMinutes + durationMinutes;
-        if (currentMinutes >= endTimeMinutes) {
-          return true;
-        }
-      }
-    }
-    return false;
-  });
-
-  const completedOrArchived = meetings.filter(m => {
-    const s = String(m.status || "").trim().toLowerCase();
-    return s === "completed" || s === "archived";
-  });
-
-  if (overdueMeetings.length === 0 && completedOrArchived.length === 0) {
-    return;
-  }
-
-  const existingHistIds = new Set(meetingHistory.map(h => h.id));
-
-  const meetingsToProcess: any[] = [];
-
-  overdueMeetings.forEach(m => {
-    meetingsToProcess.push({ meeting: m, shouldUpdateStatus: true });
-  });
-
-  completedOrArchived.forEach(m => {
     const occurrenceDate = m.occurrenceDate || (m.meetingDates && m.meetingDates[0]) || todayStr;
     const historyId = `m-hist-${m.id}-${occurrenceDate}`;
-    if (!existingHistIds.has(historyId)) {
-      meetingsToProcess.push({ meeting: m, shouldUpdateStatus: false });
-    }
-  });
+    const needsHistory = !existingHistIds.has(historyId);
 
-  if (meetingsToProcess.length === 0) {
-    return;
+    const latestDate = dates.length > 0
+      ? dates.reduce((latest, current) => (current > latest ? current : latest), dates[0])
+      : occurrenceDate;
+
+    const scheduledTimeStr = m.timeString || m.time || m.scheduledStartTime || m.startTime || "09:00 AM";
+    const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
+    const durationStr = m.duration || "30 minutes";
+    const matchDuration = durationStr.match(/(\d+)/);
+    const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
+    const endTimeMinutes = scheduledMinutes + durationMinutes;
+
+    let isMeetingEnded = false;
+    let isPast5MinutesAfterCompletion = false;
+
+    if (latestDate < todayStr) {
+      isMeetingEnded = true;
+      isPast5MinutesAfterCompletion = true;
+    } else if (latestDate === todayStr) {
+      if (currentMinutes >= endTimeMinutes + 5) {
+        isMeetingEnded = true;
+        isPast5MinutesAfterCompletion = true;
+      } else if (currentMinutes >= endTimeMinutes) {
+        isMeetingEnded = true;
+      }
+    }
+
+    // Check if updatedAt exists on a Completed meeting and 5 minutes have passed
+    if (statusLower === "completed" && m.updatedAt) {
+      const msSinceUpdate = now.getTime() - new Date(m.updatedAt).getTime();
+      if (!isNaN(msSinceUpdate) && msSinceUpdate >= 5 * 60 * 1000) {
+        isPast5MinutesAfterCompletion = true;
+      }
+    }
+
+    let targetStatus = m.status || "Upcoming";
+    if (isPast5MinutesAfterCompletion) {
+      targetStatus = "Archived";
+    } else if (isMeetingEnded) {
+      targetStatus = "Completed";
+    }
+
+    const shouldUpdateStatus = statusLower !== targetStatus.toLowerCase();
+
+    if (
+      shouldUpdateStatus ||
+      (needsHistory &&
+        (targetStatus.toLowerCase() === "completed" ||
+          targetStatus.toLowerCase() === "archived"))
+    ) {
+      meetingsToProcess.push({ meeting: m, targetStatus, shouldUpdateStatus });
+    }
   }
 
-  console.log(`Processing ${meetingsToProcess.length} completed/archived meetings for history/attendance preservation...`);
+  if (meetingsToProcess.length === 0) return;
+
+  console.log(`Processing ${meetingsToProcess.length} meetings for auto-completion / auto-archiving (5 min post-completion)...`);
 
   const batches: any[] = [];
   let currentBatch = writeBatch(db);
   let batchCount = 0;
   const writeBatchSize = 400;
 
-  meetingsToProcess.forEach(({ meeting: m, shouldUpdateStatus }) => {
+  meetingsToProcess.forEach(({ meeting: m, targetStatus, shouldUpdateStatus }) => {
     if (shouldUpdateStatus) {
       const docRef = doc(db, "meetings", m.id);
-      currentBatch.update(docRef, { status: "Completed" });
+      currentBatch.update(docRef, { status: targetStatus, updatedAt: new Date().toISOString() });
       batchCount++;
       if (batchCount >= writeBatchSize) {
         batches.push(currentBatch);
@@ -526,7 +536,11 @@ export const autoArchiveCompletedMeetings = async (
   }
 
   if (batches.length > 0) {
-    await Promise.all(batches.map(b => b.commit()));
+    try {
+      await Promise.all(batches.map(b => b.commit()));
+    } catch (err: any) {
+      console.warn("[autoArchiveCompletedMeetings] Batch commit failed or skipped due to permissions:", err?.message || err);
+    }
   }
 };
 
@@ -626,6 +640,12 @@ export const synchronizeMeetings = async (): Promise<{ added: string[]; updated:
     }
   }
 
+  try {
+    await processQueuedUpdates();
+  } catch (qErr) {
+    console.warn("[synchronizeMeetings] processQueuedUpdates failed:", qErr);
+  }
+
   return { added, updated };
 };
 
@@ -657,6 +677,7 @@ export const subscribeToAllState = (
     queuedMeetingUpdates: [],
     assessmentAttempts: [],
     onboardingSubmissions: [],
+    kdPresentations: [],
     tasks: [],
     microservices: [],
     careerPathways: null,
@@ -683,7 +704,8 @@ export const subscribeToAllState = (
         "meetingHistory",
         "metadata",
         "assessmentAttempts",
-        "onboardingSubmissions"
+        "onboardingSubmissions",
+        "kdPresentations"
       ]
     : [
         "profiles", // Live subscription only to own profile
@@ -699,7 +721,8 @@ export const subscribeToAllState = (
         "meetingAssignments",
         "metadata",
         "assessmentAttempts",
-        "onboardingSubmissions"
+        "onboardingSubmissions",
+        "kdPresentations"
       ];
 
   const collectionsToFetchOnce = isAdmin
@@ -788,6 +811,7 @@ export const subscribeToAllState = (
           state.microservices = appConfig.microservices || [];
           state.careerPathways = appConfig.careerPathways || null;
           state.autoMidnightSyncEnabled = appConfig.autoMidnightSyncEnabled !== undefined ? appConfig.autoMidnightSyncEnabled : false;
+          state.kdInfo = appConfig.kdInfo || defaultKnowledgeDevelopmentInfo;
         }
       } else if (colName === "profiles" && !isAdmin) {
         // Standard user: merge real-time update of own profile with one-time fetched profiles list
@@ -1004,8 +1028,47 @@ export const subscribeToAllState = (
       attendanceAuditLogs: returnedAuditLogs
     };
 
+    if (
+      isAdmin &&
+      state.meetings &&
+      state.meetings.length > 0 &&
+      state.profiles &&
+      state.profiles.length > 0
+    ) {
+      autoArchiveCompletedMeetings(
+        state.meetings,
+        state.profiles,
+        state.attendance,
+        state.meetingAssignments,
+        state.meetingHistory
+      ).catch((err) =>
+        console.error("Auto archive on snapshot notify error:", err)
+      );
+    }
+
     onStateUpdated(compiled);
   };
+
+  const autoArchiveCheckInterval = setInterval(() => {
+    if (isQuotaExhausted) return;
+    if (!isAdmin) return;
+    if (
+      state.meetings &&
+      state.meetings.length > 0 &&
+      state.profiles &&
+      state.profiles.length > 0
+    ) {
+      autoArchiveCompletedMeetings(
+        state.meetings,
+        state.profiles,
+        state.attendance,
+        state.meetingAssignments,
+        state.meetingHistory
+      ).catch((err) =>
+        console.error("Auto archive interval check error:", err)
+      );
+    }
+  }, 30000);
 
   const checkInterval = setInterval(() => {
     if (isQuotaExhausted) {
@@ -1024,6 +1087,7 @@ export const subscribeToAllState = (
 
   return () => {
     clearInterval(checkInterval);
+    clearInterval(autoArchiveCheckInterval);
     unsubscribes.forEach(unsub => unsub());
   };
 };
@@ -1138,6 +1202,14 @@ export const runMidnightSyncIfNeeded = async (
       }
     }
 
+    try {
+      console.log("⏱️ Distributed automatic midnight sync processing queued updates...");
+      await processQueuedUpdates();
+      console.log("[midnightSync] processQueuedUpdates completed successfully.");
+    } catch (e) {
+      console.error("[midnightSync] processQueuedUpdates failed:", e);
+    }
+
     if (state.autoMidnightSyncEnabled) {
       try {
         console.log("⏱️ Distributed automatic midnight sync triggered!");
@@ -1213,7 +1285,11 @@ export const getProfileById = async (id: string): Promise<Profile | null> => {
 };
 
 export const updateProfile = async (id: string, updates: Partial<Profile>): Promise<Profile> => {
-  await updateDoc(doc(db, "profiles", id), updates);
+  try {
+    await updateDoc(doc(db, "profiles", id), updates);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `profiles/${id}`);
+  }
   const updated = await getProfileById(id);
   if (!updated) throw new Error("Updated profile not found");
   return updated;
@@ -1258,7 +1334,17 @@ export const submitOnboarding = async (
     console.error("Failed to store onboarding submission in Firestore:", err);
   }
 
-  return updateProfile(id, {
+  const isMentorLevel = 
+    String(onboardingData.learningLevel || "").toLowerCase().includes("mentor") ||
+    String(onboardingData.occupation || "").toLowerCase().includes("mentor");
+  const isAdminLevel = 
+    String(onboardingData.learningLevel || "").toLowerCase().includes("admin") ||
+    String(onboardingData.occupation || "").toLowerCase().includes("admin");
+
+  const targetRole = isAdminLevel ? "admin" : isMentorLevel ? "mentor" : undefined;
+  const targetStatus = (isAdminLevel || isMentorLevel) ? "dashboard" : "assessment_failed";
+
+  const updateFields: Partial<Profile> = {
     fullName: onboardingData.fullName,
     education: onboardingData.education,
     occupation: onboardingData.occupation,
@@ -1266,9 +1352,15 @@ export const submitOnboarding = async (
     track: onboardingData.track,
     learningLevel: onboardingData.learningLevel as any,
     previousCourseCompleted: onboardingData.previousCourseCompleted,
-    status: "assessment_failed" as any,
+    status: targetStatus as any,
     score: deleteField() as any
-  });
+  };
+
+  if (targetRole) {
+    updateFields.role = targetRole as any;
+  }
+
+  return updateProfile(id, updateFields);
 };
 
 export const submitAssessment = async (
@@ -2224,17 +2316,9 @@ export const processQueuedUpdates = async (): Promise<{ succeeded: string[]; fai
     const updates = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as QueuedMeetingUpdate));
     updates.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-    const todayStr = getLagosDateString(new Date());
-    const eligibleUpdates = updates.filter(up => {
-      const mData = up.meetingData;
-      if (!mData) return true;
-      const scheduledDate = mData.occurrenceDate || (mData.meetingDates && mData.meetingDates[0]);
-      if (!scheduledDate) return true;
-      return todayStr >= scheduledDate;
-    });
-
+    // Process all pending or failed queued updates at midnight
     const latestUpdatesMap = new Map<string, QueuedMeetingUpdate>();
-    eligibleUpdates.forEach(up => {
+    updates.forEach(up => {
       latestUpdatesMap.set(up.meetingId, up);
     });
 
@@ -2266,6 +2350,7 @@ export const processQueuedUpdates = async (): Promise<{ succeeded: string[]; fai
 
             await setDoc(docRef, updatedMeeting, { merge: true });
             await syncMeetingAssignmentsForMeetings([updatedMeeting]);
+            await syncMeetingToKDCase(updatedMeeting);
           }
         } else if (up.type === "delete") {
           await deleteDoc(doc(db, "meetings", up.meetingId));
@@ -2325,10 +2410,11 @@ export const saveMeeting = async (
   const adminId = adminProfile?.id || "system-admin";
   const adminEmail = adminProfile?.email || "admin@bincom.dev";
 
-  if (cleanData.isRecurring && !cleanData.id) {
+  if (cleanData.isRecurring && !cleanData.seriesId) {
     const seriesId = `series-${Date.now()}`;
-    const frequency = cleanData.recurrenceFrequency || "one-time";
-    const startDate = cleanData.recurrenceStartDate || todayStr;
+    const rawFreq = cleanData.recurrenceFrequency;
+    const frequency = (!rawFreq || rawFreq === "one-time") ? "daily" : rawFreq;
+    const startDate = cleanData.recurrenceStartDate || cleanData.meetingDates?.[0] || todayStr;
     const endDate = cleanData.recurrenceEndDate || "";
     const customInterval = cleanData.recurrenceCustomInterval || 1;
 
@@ -2631,6 +2717,7 @@ export const saveMeeting = async (
 
     await batch.commit();
     await syncMeetingAssignmentsForMeetings([syncedData], !meetingData.id, profiles);
+    await syncMeetingToKDCase(syncedData);
   } else {
     const logId = `queued-${meetingData.id ? "edit" : "create"}-${meetingId}-${Date.now()}`;
     const updateDocData = {
@@ -2647,6 +2734,21 @@ export const saveMeeting = async (
     };
     batch.set(doc(db, "queuedMeetingUpdates", logId), updateDocData);
     await batch.commit();
+  }
+};
+
+export const archiveMeetingInFirestore = async (
+  meetingId: string,
+  newStatus: string = "Archived"
+): Promise<void> => {
+  try {
+    const docRef = doc(db, "meetings", meetingId);
+    await updateDoc(docRef, {
+      status: newStatus,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `meetings/${meetingId}`);
   }
 };
 
@@ -3516,4 +3618,158 @@ export const updateAppConfigField = async (fieldName: string, value: any): Promi
     await setDoc(docRef, { [fieldName]: value, meetingTypes: ["Knowledge Track", "Microservices", "Project"], kdCounts: {}, microserviceOwners: {} });
   }
 };
+
+export const updateKnowledgeDevelopmentInfo = async (info: KnowledgeDevelopmentInfo, adminUser: Profile): Promise<void> => {
+  const updatedInfo: KnowledgeDevelopmentInfo = {
+    ...info,
+    lastUpdatedBy: adminUser.fullName || adminUser.username || "Admin",
+    lastUpdatedAt: new Date().toISOString()
+  };
+  await updateAppConfigField("kdInfo", updatedInfo);
+};
+
+export const syncKDMeetingToFirestoreMeetings = async (
+  presentationId: string,
+  presentationData: Partial<KDPresentation>
+): Promise<string> => {
+  if (!presentationData.date) return presentationData.linkedMeetingId || "";
+  const meetingId = presentationData.linkedMeetingId || `kd_meet_${presentationId}`;
+  const meetingLink = presentationData.meetingLink || `https://meet.jit.si/BincomDevCenter_KD_${presentationData.date.replace(/-/g, "")}`;
+  
+  const meetingDoc = {
+    id: meetingId,
+    title: `KD Presentation: ${presentationData.presenterName || "Scheduled Session"}${presentationData.topic ? ` - ${presentationData.topic}` : ""}`,
+    type: "Knowledge Track",
+    timeString: "09:00 AM WAT",
+    time: "09:00 AM WAT",
+    jitsiUrl: meetingLink,
+    meetingDates: [presentationData.date],
+    scheduleDays: [presentationData.dayOfWeek || "Tuesday"],
+    isActive: presentationData.status !== "Cancelled" && presentationData.status !== "Rejected",
+    status: presentationData.status === "Cancelled" ? "Cancelled" : "Active",
+    updatedAt: new Date().toISOString()
+  };
+
+  try {
+    await setDoc(doc(db, "meetings", meetingId), meetingDoc, { merge: true });
+  } catch (err) {
+    console.warn("Error syncing meeting doc:", err);
+  }
+  return meetingId;
+};
+
+export const syncMeetingToKDCase = async (meetingDoc: any): Promise<void> => {
+  if (!meetingDoc) return;
+  const isKDType = 
+    meetingDoc.type === "Knowledge Track" || 
+    meetingDoc.type === "Knowledge Development" || 
+    meetingDoc.type === "KD Microservice" ||
+    String(meetingDoc.title || "").toLowerCase().includes("kd presentation");
+  
+  if (!isKDType) return;
+
+  const dates: string[] = meetingDoc.meetingDates || (meetingDoc.occurrenceDate ? [meetingDoc.occurrenceDate] : []);
+  if (dates.length === 0) return;
+
+  for (const dateStr of dates) {
+    const kdPresId = `kd_pres_${meetingDoc.id}_${dateStr.replace(/-/g, "")}`;
+    const docRef = doc(db, "kdPresentations", kdPresId);
+    
+    const dayOfWeek = (meetingDoc.scheduleDays && meetingDoc.scheduleDays[0]) || new Date(`${dateStr}T00:00:00`).toLocaleDateString("en-US", { weekday: "long" });
+    const meetingLink = meetingDoc.jitsiUrl || `https://meet.jit.si/BincomDevCenter_KD_${dateStr.replace(/-/g, "")}`;
+    
+    try {
+      const existingDoc = await getDoc(docRef);
+      if (existingDoc.exists()) {
+        await updateDoc(docRef, {
+          date: dateStr,
+          dayOfWeek,
+          meetingLink,
+          notes: meetingDoc.description || existingDoc.data()?.notes || "",
+          status: meetingDoc.status === "Cancelled" ? "Cancelled" : (existingDoc.data()?.status || "Awaiting topic submission"),
+          updatedAt: new Date().toISOString()
+        });
+      } else {
+        const presDoc: KDPresentation = {
+          id: kdPresId,
+          date: dateStr,
+          dayOfWeek,
+          topic: meetingDoc.title?.replace(/^KD Presentation:\s*/i, "") || "Scheduled Knowledge Development Session",
+          presenterUserId: "",
+          presenterName: "Unassigned Presenter",
+          presenterEmail: "",
+          assignedMentorUserId: "",
+          assignedMentorName: "",
+          status: meetingDoc.status === "Cancelled" ? "Cancelled" : "Awaiting topic submission",
+          notes: meetingDoc.description || "Scheduled from Meeting Management",
+          linkedMeetingId: meetingDoc.id,
+          meetingLink,
+          submittedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        await setDoc(docRef, presDoc);
+      }
+    } catch (err) {
+      console.warn("Error syncing meeting to KD presentation:", err);
+    }
+  }
+};
+
+export const createKDPresentation = async (presentationData: Partial<KDPresentation>): Promise<string> => {
+  const newId = `kd_pres_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const defaultLink = presentationData.meetingLink || `https://meet.jit.si/BincomDevCenter_KD_${(presentationData.date || getLagosDateString(new Date())).replace(/-/g, "")}`;
+  
+  const linkedMeetingId = await syncKDMeetingToFirestoreMeetings(newId, { ...presentationData, meetingLink: defaultLink });
+
+  const presDoc: KDPresentation = {
+    id: newId,
+    date: presentationData.date || getLagosDateString(new Date()),
+    dayOfWeek: presentationData.dayOfWeek || new Date((presentationData.date || getLagosDateString(new Date())) + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" }),
+    topic: presentationData.topic || "",
+    presenterUserId: presentationData.presenterUserId || "",
+    presenterName: presentationData.presenterName || "Unassigned Presenter",
+    presenterEmail: presentationData.presenterEmail || "",
+    assignedMentorUserId: presentationData.assignedMentorUserId || "",
+    assignedMentorName: presentationData.assignedMentorName || "",
+    status: presentationData.status || "Awaiting topic submission",
+    notes: presentationData.notes || "",
+    linkedMeetingId: linkedMeetingId,
+    meetingLink: defaultLink,
+    submittedAt: presentationData.submittedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    await setDoc(doc(db, "kdPresentations", newId), presDoc);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, "kdPresentations");
+  }
+  return newId;
+};
+
+export const updateKDPresentation = async (id: string, updates: Partial<KDPresentation>): Promise<void> => {
+  const docRef = doc(db, "kdPresentations", id);
+  try {
+    if (updates.date || updates.meetingLink || updates.presenterName || updates.topic || updates.status) {
+      const linkedMeetingId = await syncKDMeetingToFirestoreMeetings(id, updates);
+      if (linkedMeetingId && !updates.linkedMeetingId) {
+        updates.linkedMeetingId = linkedMeetingId;
+      }
+    }
+    await updateDoc(docRef, {
+      ...updates,
+      updatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, `kdPresentations/${id}`);
+  }
+};
+
+export const deleteKDPresentation = async (id: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, "kdPresentations", id));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `kdPresentations/${id}`);
+  }
+};
+
 

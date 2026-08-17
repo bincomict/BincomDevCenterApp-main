@@ -2,13 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment } from "./types";
 import { auth } from "./firebase";
 import { signOut } from "firebase/auth";
-import { 
-  listenToAuthChanges, 
-  subscribeToAllState, 
-  joinMeetingAttendance, 
-  dismissReminder, 
-  dismissAllReminders 
-} from "./firebaseService";
+import { listenToAuthChanges, subscribeToAllState, joinMeetingAttendance, dismissReminder, dismissAllReminders } from "./firebaseService";
+import { seedDatabase } from "./seed";
 
 // Component imports
 import AuthPage from "./components/AuthPage";
@@ -16,6 +11,8 @@ import OnboardingForm from "./components/OnboardingForm";
 import TrackAssessment from "./components/TrackAssessment";
 import OrientationGate from "./components/OrientationGate";
 import Dashboard from "./components/Dashboard";
+import MentorDashboard from "./components/MentorDashboard";
+import MicroserviceOwnerDashboard from "./components/MicroserviceOwnerDashboard";
 import MeetingsHub from "./components/MeetingsHub";
 import MicroservicesModule from "./components/MicroservicesModule";
 import ProjectsTracker from "./components/ProjectsTracker";
@@ -71,7 +68,7 @@ export default function App() {
     onboardingSubmissions: [] as any[]
   });
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard">("dashboard");
   const [activeSubTab, setActiveSubTab] = useState<"kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social">("kd");
   const [adminTab, setAdminTab] = useState<
     | "funnel"
@@ -107,16 +104,20 @@ export default function App() {
         if (userProfile.role === "admin") {
           setActiveTab("admin");
           // Attempt automatic seed if admin is signed in (safe, skips if already seeded)
-          import("./seed").then(({ seedDatabase }) => {
-            seedDatabase().catch(err => {
-              const isOffline = err?.message?.toLowerCase().includes("offline") || err?.code === "unavailable";
-              if (isOffline) {
-                console.warn("Auto seeding deferred: Firestore is currently offline.");
-              } else {
-                console.error("Auto seeding failed:", err);
-              }
-            });
+          seedDatabase().catch(err => {
+            const isOffline = err?.message?.toLowerCase().includes("offline") || err?.code === "unavailable";
+            if (isOffline) {
+              console.warn("Auto seeding deferred: Firestore is currently offline.");
+            } else {
+              console.error("Auto seeding failed:", err);
+            }
           });
+        } else if (
+          userProfile.role === "mentor" ||
+          String(userProfile.learningLevel || "").toLowerCase().includes("mentor") ||
+          String(userProfile.occupation || "").toLowerCase().includes("mentor")
+        ) {
+          setActiveTab("mentor_dashboard");
         } else {
           setActiveTab("dashboard");
         }
@@ -326,6 +327,7 @@ export default function App() {
         setHubTab={setHubTab}
         activeSubTab={activeSubTab}
         setActiveSubTab={setActiveSubTab}
+        microserviceOwners={state.microserviceOwners}
       />
 
       {/* Right Column: TopNav & independent scrolling workspace page */}
@@ -391,11 +393,23 @@ export default function App() {
         <main className="flex-1 overflow-y-auto bg-[#F8FAF8] p-5 sm:p-6 flex flex-col" id="central-application-canvas">
           <div className="flex-1">
             <div className={`mx-auto max-w-7xl ${
-              activeTab === "dashboard" 
+              activeTab === "dashboard" || activeTab === "mentor_dashboard"
                 ? "space-y-6" 
                 : "bg-white border border-gray-150 rounded-2xl p-5 sm:p-6 shadow-2xs"
             }`} id="tab-canvas-panel">
               
+              {activeTab === "mentor_dashboard" && (
+                <MentorDashboard
+                  profile={profile}
+                  state={state}
+                  onJoinMeeting={handleMarkAttendance}
+                  setActiveTab={setActiveTab}
+                  setActiveSubTab={setActiveSubTab}
+                  setAdminTab={setAdminTab}
+                  onStateUpdate={fetchLatestState}
+                />
+              )}
+
               {activeTab === "dashboard" && (
                 <Dashboard 
                   profile={profile}
@@ -441,8 +455,14 @@ export default function App() {
 
               {activeTab === "leaderboard" && (
                 <LeaderboardPodium 
+                  profile={profile}
                   profiles={state.profiles} 
                   attendance={state.attendance} 
+                  presentations={state.kdPresentations}
+                  meetings={state.meetings}
+                  kdInfo={state.kdInfo}
+                  microserviceOwners={state.microserviceOwners}
+                  onStateUpdate={fetchLatestState}
                 />
               )}
 
@@ -457,6 +477,18 @@ export default function App() {
                   onStateUpdate={fetchLatestState} 
                   adminTab={adminTab}
                   setAdminTab={setAdminTab}
+                />
+              )}
+
+              {activeTab === "microservice_dashboard" && (
+                <MicroserviceOwnerDashboard 
+                  profile={profile}
+                  state={state}
+                  onJoinMeeting={handleMarkAttendance}
+                  setActiveTab={setActiveTab}
+                  setActiveSubTab={setActiveSubTab}
+                  setAdminTab={setAdminTab}
+                  onStateUpdate={fetchLatestState}
                 />
               )}
 

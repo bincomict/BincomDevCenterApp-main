@@ -34,19 +34,12 @@ import {
   Plus,
   Video
 } from "lucide-react";
+import KnowledgeDevelopmentInfoView from "./KnowledgeDevelopmentInfoView";
+import { KnowledgeDevelopmentInfo, KDPresentation, Meeting, AttendanceRecord } from "../types";
 
 interface MicroservicesModuleProps {
   profile: Profile;
-  state: {
-    standups: StandupLog[];
-    personalDevelopment: PersonalDevelopmentLog[];
-    techUpdates: TechUpdateSubmission[];
-    weeklyDrills: WeeklyDrill[];
-    drillSubmissions: WeeklyDrillSubmission[];
-    socialLogs: SocialEventLog[];
-    dailyReports?: DailyReportLog[]; // made optional to avoid breakages
-    kdCounts: Record<string, number>;
-  };
+  state: any;
   onStateUpdate: () => void;
   activeSubTab?: "kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social";
   onActiveSubTabChange?: (tab: "kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social") => void;
@@ -395,6 +388,18 @@ export default function MicroservicesModule({
               </p>
             )}
           </div>
+
+          {/* Knowledge Development Information View (Always Available) */}
+          <KnowledgeDevelopmentInfoView 
+            profile={profile}
+            kdInfo={state.kdInfo}
+            presentations={state.kdPresentations}
+            meetings={state.meetings}
+            attendance={state.attendance}
+            microserviceOwners={state.microserviceOwners}
+            profiles={state.profiles}
+            onStateUpdate={onStateUpdate}
+          />
         </div>
       )}
 

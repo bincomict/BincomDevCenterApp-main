@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Meeting, AttendanceRecord, Profile } from "../types";
-import { Video, Clock, CheckCircle, Play, Users, Landmark, Key, Shield, XCircle, History, ChevronDown, AlertTriangle } from "lucide-react";
-import { getStandupDetails, getCleanTrackName, shouldShowMeetingOnDashboard, getLagosDateString, formatMeetingDates, formatExactJoinTime } from "../utils/trackUtils";
+import { Video, Clock, CheckCircle, Play, Users, Landmark, Key, Shield, XCircle, History, ChevronDown, AlertTriangle, BookOpen, Info, Plus, Calendar } from "lucide-react";
+import { getStandupDetails, getCleanTrackName, shouldShowMeetingOnDashboard, getLagosDateString, formatMeetingDates, formatExactJoinTime, isKDCompulsoryForLevel, checkIsKDOwner } from "../utils/trackUtils";
 import AttendanceHistoryTab from "./AttendanceHistoryTab";
+import KnowledgeDevelopmentInfoView from "./KnowledgeDevelopmentInfoView";
 
 interface MeetingsHubProps {
   profile: Profile;
@@ -108,6 +109,7 @@ export default function MeetingsHub({
   const [customEnd, setCustomEnd] = useState<string>("05:00 PM");
   const [sortOption, setSortOption] = useState<"time" | "title">("time");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [showKDModal, setShowKDModal] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -815,10 +817,63 @@ export default function MeetingsHub({
 
       {/* 1. KNOWLEDGE TRACK MEETINGS */}
       <div className="space-y-3" id="knowledge-track-meetings-section">
-        <h3 className="font-extrabold text-sm text-gray-950 uppercase tracking-wider flex items-center gap-2 border-b border-gray-150 pb-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] inline-block"></span>
-          Knowledge Track Meetings
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-150 pb-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-extrabold text-sm text-gray-950 uppercase tracking-wider flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] inline-block"></span>
+              Knowledge Track Meetings
+            </h3>
+            {(() => {
+              const uLvl = profile.learningLevel || profile.techExperience || "Apprentice level 1";
+              const isComp = isKDCompulsoryForLevel(uLvl, state?.kdInfo?.compulsoryLevels);
+              return (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                  isComp 
+                    ? "bg-rose-100 text-rose-800 border border-rose-200" 
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                }`}>
+                  {isComp ? "Compulsory Level" : "Optional Level"} ({uLvl})
+                </span>
+              );
+            })()}
+          </div>
+          <div className="flex items-center gap-2">
+            {checkIsKDOwner(profile, state?.microserviceOwners, profile.role === "admin" || profile.status === "admin") && (
+              <button
+                type="button"
+                id="btn-schedule-kd-meeting"
+                onClick={() => setShowKDModal(true)}
+                className="px-3 py-1.5 bg-[#4B5E40] hover:bg-[#3d4d34] text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Schedule KD Presentation
+              </button>
+            )}
+            <button
+              type="button"
+              id="btn-view-kd-guidelines"
+              onClick={() => setShowKDModal(true)}
+              className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-[#4B5E40] border border-emerald-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#4B5E40]" />
+              KD Info & Schedule Desk
+            </button>
+          </div>
+        </div>
+
+        {showKDModal && (
+          <KnowledgeDevelopmentInfoView 
+            profile={profile}
+            kdInfo={state?.kdInfo}
+            presentations={state?.kdPresentations}
+            meetings={state?.meetings}
+            microserviceOwners={state?.microserviceOwners}
+            profiles={state?.profiles}
+            onStateUpdate={onStateUpdate}
+            isModal={true}
+            onCloseModal={() => setShowKDModal(false)}
+          />
+        )}
         
         {knowledgeTrackMeetings.length === 0 ? (
           <div className="p-6 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200 text-xs font-semibold text-gray-500">

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import KnowledgeDevelopmentInfoView from "./KnowledgeDevelopmentInfoView";
 import {
   Profile,
   AttendanceRecord,
@@ -24,7 +25,7 @@ import {
   assignKDCount,
   updateAppConfigField,
   isUserEligibleForMeetingInBackend,
-  subscribeToQueuedUpdates
+  subscribeToQueuedUpdates,
 } from "../firebaseService";
 import { toast } from "./Toast";
 import {
@@ -57,7 +58,7 @@ import {
   Sparkles,
   ArrowUp,
   ArrowDown,
-  RefreshCw
+  RefreshCw,
 } from "lucide-react";
 import AttendanceHistoryTab from "./AttendanceHistoryTab";
 
@@ -82,28 +83,70 @@ const getBaseMeetingId = (id: string) => {
 
 const isMatchingLogForMeeting = (log: any, targetMeeting: any) => {
   if (!log || !targetMeeting) return false;
-  const lMeetingId = String(log.meetingId || "").toLowerCase().trim();
-  const lParentId = String(log.parentMeetingId || log.seriesId || "").toLowerCase().trim();
-  const lTitle = String(log.meetingTitle || log.title || "").toLowerCase().trim();
-  const lLogId = String(log.id || "").toLowerCase().trim();
+  const lMeetingId = String(log.meetingId || "")
+    .toLowerCase()
+    .trim();
+  const lParentId = String(log.parentMeetingId || log.seriesId || "")
+    .toLowerCase()
+    .trim();
+  const lTitle = String(log.meetingTitle || log.title || "")
+    .toLowerCase()
+    .trim();
+  const lLogId = String(log.id || "")
+    .toLowerCase()
+    .trim();
 
-  const mId = String(targetMeeting.id || "").toLowerCase().trim();
-  const mMeetingId = String(targetMeeting.meetingId || "").toLowerCase().trim();
-  const mSeriesId = String(targetMeeting.seriesId || targetMeeting.parentMeetingId || targetMeeting.recurringSeriesId || "").toLowerCase().trim();
-  const mTitle = String(targetMeeting.title || targetMeeting.meetingTitle || "").toLowerCase().trim();
+  const mId = String(targetMeeting.id || "")
+    .toLowerCase()
+    .trim();
+  const mMeetingId = String(targetMeeting.meetingId || "")
+    .toLowerCase()
+    .trim();
+  const mSeriesId = String(
+    targetMeeting.seriesId ||
+      targetMeeting.parentMeetingId ||
+      targetMeeting.recurringSeriesId ||
+      "",
+  )
+    .toLowerCase()
+    .trim();
+  const mTitle = String(targetMeeting.title || targetMeeting.meetingTitle || "")
+    .toLowerCase()
+    .trim();
 
-  if (lMeetingId && (lMeetingId === mId || lMeetingId === mMeetingId || lMeetingId === mSeriesId)) return true;
-  if (lParentId && (lParentId === mId || lParentId === mMeetingId || lParentId === mSeriesId)) return true;
+  if (
+    lMeetingId &&
+    (lMeetingId === mId ||
+      lMeetingId === mMeetingId ||
+      lMeetingId === mSeriesId)
+  )
+    return true;
+  if (
+    lParentId &&
+    (lParentId === mId || lParentId === mMeetingId || lParentId === mSeriesId)
+  )
+    return true;
   if (mId && (mId === lMeetingId || mId === lParentId)) return true;
-  if (mMeetingId && (mMeetingId === lMeetingId || mMeetingId === lParentId)) return true;
-  if (mSeriesId && (mSeriesId === lMeetingId || mSeriesId === lParentId)) return true;
+  if (mMeetingId && (mMeetingId === lMeetingId || mMeetingId === lParentId))
+    return true;
+  if (mSeriesId && (mSeriesId === lMeetingId || mSeriesId === lParentId))
+    return true;
 
   const lBase = getBaseMeetingId(lMeetingId) || getBaseMeetingId(lParentId);
-  const mBase = getBaseMeetingId(mId) || getBaseMeetingId(mMeetingId) || getBaseMeetingId(mSeriesId);
+  const mBase =
+    getBaseMeetingId(mId) ||
+    getBaseMeetingId(mMeetingId) ||
+    getBaseMeetingId(mSeriesId);
   if (lBase && mBase && lBase === mBase) return true;
 
-  if (lMeetingId && mId && (lMeetingId.includes(mId) || mId.includes(lMeetingId))) return true;
-  if (lBase && mBase && (lBase.includes(mBase) || mBase.includes(lBase))) return true;
+  if (
+    lMeetingId &&
+    mId &&
+    (lMeetingId.includes(mId) || mId.includes(lMeetingId))
+  )
+    return true;
+  if (lBase && mBase && (lBase.includes(mBase) || mBase.includes(lBase)))
+    return true;
   if (mId && lLogId && lLogId.includes(mId)) return true;
   if (mBase && lLogId && lLogId.includes(mBase)) return true;
 
@@ -111,38 +154,104 @@ const isMatchingLogForMeeting = (log: any, targetMeeting: any) => {
     if (lTitle === mTitle) return true;
     const cleanL = cleanMeetingTitle(lTitle);
     const cleanM = cleanMeetingTitle(mTitle);
-    if (cleanL && cleanM && (cleanL === cleanM || cleanL.includes(cleanM) || cleanM.includes(cleanL))) return true;
+    if (
+      cleanL &&
+      cleanM &&
+      (cleanL === cleanM || cleanL.includes(cleanM) || cleanM.includes(cleanL))
+    )
+      return true;
   }
-  if (lMeetingId && mTitle && (lMeetingId === mTitle || mTitle.includes(lMeetingId))) return true;
+  if (
+    lMeetingId &&
+    mTitle &&
+    (lMeetingId === mTitle || mTitle.includes(lMeetingId))
+  )
+    return true;
   if (mId && lTitle && (mId === lTitle || lTitle.includes(mId))) return true;
 
   return false;
 };
 
-const isMatchingLogForMeetingAndUser = (log: any, targetMeeting: any, profile: any) => {
+const isMatchingLogForMeetingAndUser = (
+  log: any,
+  targetMeeting: any,
+  profile: any,
+) => {
   if (!log || !profile) return false;
   if (!isMatchingLogForMeeting(log, targetMeeting)) return false;
 
-  const lUserId = String(log.userId || "").toLowerCase().trim();
-  const lUsername = String(log.username || "").toLowerCase().trim();
-  const lEmail = String(log.userEmail || log.email || "").toLowerCase().trim();
-  const lFullName = String(log.fullName || "").toLowerCase().trim();
+  const lUserId = String(log.userId || "")
+    .toLowerCase()
+    .trim();
+  const lUsername = String(log.username || "")
+    .toLowerCase()
+    .trim();
+  const lEmail = String(log.userEmail || log.email || "")
+    .toLowerCase()
+    .trim();
+  const lFullName = String(log.fullName || "")
+    .toLowerCase()
+    .trim();
 
-  const pProfId = String(profile.id || "").toLowerCase().trim();
-  const pUsername = String(profile.username || "").toLowerCase().trim();
-  const pEmail = String(profile.email || "").toLowerCase().trim();
-  const pUid = String(profile.uid || "").toLowerCase().trim();
-  const pFullName = String(profile.fullName || "").toLowerCase().trim();
+  const pProfId = String(profile.id || "")
+    .toLowerCase()
+    .trim();
+  const pUsername = String(profile.username || "")
+    .toLowerCase()
+    .trim();
+  const pEmail = String(profile.email || "")
+    .toLowerCase()
+    .trim();
+  const pUid = String(profile.uid || "")
+    .toLowerCase()
+    .trim();
+  const pFullName = String(profile.fullName || "")
+    .toLowerCase()
+    .trim();
 
-  if (pProfId && (lUserId === pProfId || lUsername === pProfId || lEmail === pProfId)) return true;
-  if (pUsername && (lUserId === pUsername || lUsername === pUsername || lEmail === pUsername)) return true;
-  if (pEmail && (lUserId === pEmail || lUsername === pEmail || lEmail === pEmail)) return true;
-  if (pUid && (lUserId === pUid || lUsername === pUid || lEmail === pUid)) return true;
+  if (
+    pProfId &&
+    (lUserId === pProfId || lUsername === pProfId || lEmail === pProfId)
+  )
+    return true;
+  if (
+    pUsername &&
+    (lUserId === pUsername || lUsername === pUsername || lEmail === pUsername)
+  )
+    return true;
+  if (
+    pEmail &&
+    (lUserId === pEmail || lUsername === pEmail || lEmail === pEmail)
+  )
+    return true;
+  if (pUid && (lUserId === pUid || lUsername === pUid || lEmail === pUid))
+    return true;
 
-  if (pFullName && lFullName && (pFullName === lFullName || pFullName.includes(lFullName) || lFullName.includes(pFullName))) return true;
+  if (
+    pFullName &&
+    lFullName &&
+    (pFullName === lFullName ||
+      pFullName.includes(lFullName) ||
+      lFullName.includes(pFullName))
+  )
+    return true;
 
-  if (pUsername && pUsername.length >= 2 && (lUserId.includes(pUsername) || lEmail.includes(pUsername) || lUsername.includes(pUsername))) return true;
-  if (lUsername && lUsername.length >= 2 && (pProfId.includes(lUsername) || pEmail.includes(lUsername) || pUsername.includes(lUsername))) return true;
+  if (
+    pUsername &&
+    pUsername.length >= 2 &&
+    (lUserId.includes(pUsername) ||
+      lEmail.includes(pUsername) ||
+      lUsername.includes(pUsername))
+  )
+    return true;
+  if (
+    lUsername &&
+    lUsername.length >= 2 &&
+    (pProfId.includes(lUsername) ||
+      pEmail.includes(lUsername) ||
+      pUsername.includes(lUsername))
+  )
+    return true;
 
   return false;
 };
@@ -151,8 +260,10 @@ const LEVELS_OPTIONS = [
   "Apprentice level 1",
   "Apprentice level 2",
   "Apprentice level 3",
+  "Intern",
   "Volunteer beginner level",
   "Volunteer intermediate level",
+  "Volunteer advanced level",
   "Junior associate level 1",
   "Junior associate level 2",
   "Junior associate level 3",
@@ -161,7 +272,6 @@ const LEVELS_OPTIONS = [
   "Senior associate level 3",
   "Mentor",
   "Admin",
-  "Intern",
   "Trainee Level 1",
   "Trainee Level 2",
   "Trainee Level 3",
@@ -178,11 +288,7 @@ const ELIGIBILITY_TRACK_GROUPS = [
   },
   {
     category: "Apprentice",
-    options: [
-      "Apprentice level 1",
-      "Apprentice level 2",
-      "Apprentice level 3",
-    ],
+    options: ["Apprentice level 1", "Apprentice level 2", "Apprentice level 3"],
   },
   {
     category: "Intern",
@@ -197,7 +303,7 @@ const ELIGIBILITY_TRACK_GROUPS = [
     options: [
       "Volunteer beginner level",
       "Volunteer intermediate level",
-      "Volunteer – Expert Level",
+      "Volunteer advanced level",
     ],
   },
   {
@@ -303,9 +409,21 @@ const getTeamTracksDisplay = (targetTeamTrackEligibility?: any): string => {
 const getMeetingTypeLabel = (type: string): string => {
   if (!type) return "";
   const t = type.toLowerCase().trim();
-  if (t === "knowledge" || t === "knowledge sharing hub session") return "Knowledge Track";
-  if (t === "microservice" || t === "standup" || t === "weekly progress standup" || t === "weekly progress standup room") return "Microservices";
-  if (t === "project" || t === "pd" || t === "personal development (pd) session") return "Project";
+  if (t === "knowledge" || t === "knowledge sharing hub session")
+    return "Knowledge Track";
+  if (
+    t === "microservice" ||
+    t === "standup" ||
+    t === "weekly progress standup" ||
+    t === "weekly progress standup room"
+  )
+    return "Microservices";
+  if (
+    t === "project" ||
+    t === "pd" ||
+    t === "personal development (pd) session"
+  )
+    return "Project";
   return type;
 };
 
@@ -323,7 +441,7 @@ interface AdminPanelProps {
   adminProfile?: Profile;
   state: any;
   onStateUpdate: () => void;
-  adminTab: 
+  adminTab:
     | "funnel"
     | "reviews"
     | "drills"
@@ -351,12 +469,12 @@ export default function AdminPanel({
   adminTab,
   setAdminTab,
 }: AdminPanelProps) {
-
-
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const [localQueuedMeetingUpdates, setLocalQueuedMeetingUpdates] = useState<any[]>([]);
+  const [localQueuedMeetingUpdates, setLocalQueuedMeetingUpdates] = useState<
+    any[]
+  >([]);
 
   useEffect(() => {
     if (adminTab === "sync_logs") {
@@ -369,7 +487,10 @@ export default function AdminPanel({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target as Node)
+      ) {
         setIsDropdownOpen(false);
       }
     }
@@ -392,10 +513,14 @@ export default function AdminPanel({
   const [taskEditorTitle, setTaskEditorTitle] = useState("");
   const [taskEditorDesc, setTaskEditorDesc] = useState("");
   const [taskEditorDue, setTaskEditorDue] = useState("");
-  const [taskEditorPriority, setTaskEditorPriority] = useState<"High" | "Medium" | "Low">("Medium");
+  const [taskEditorPriority, setTaskEditorPriority] = useState<
+    "High" | "Medium" | "Low"
+  >("Medium");
 
   // Dashboard Microservices Editor States
-  const [editingMicroserviceId, setEditingMicroserviceId] = useState<string | null>(null);
+  const [editingMicroserviceId, setEditingMicroserviceId] = useState<
+    string | null
+  >(null);
   const [msEditorTitle, setMsEditorTitle] = useState("");
   const [msEditorDesc, setMsEditorDesc] = useState("");
   const [msEditorLinkText, setMsEditorLinkText] = useState("");
@@ -404,8 +529,12 @@ export default function AdminPanel({
   const [msEditorIcon, setMsEditorIcon] = useState("");
 
   // Career Pathways Editor States
-  const [editingPathwaySection, setEditingPathwaySection] = useState<"foundation" | "trackSplit" | "lateralRoles" | null>(null);
-  const [editingPathwayIndex, setEditingPathwayIndex] = useState<number | null>(null);
+  const [editingPathwaySection, setEditingPathwaySection] = useState<
+    "foundation" | "trackSplit" | "lateralRoles" | null
+  >(null);
+  const [editingPathwayIndex, setEditingPathwayIndex] = useState<number | null>(
+    null,
+  );
   const [pathwayEditorTitle, setPathwayEditorTitle] = useState("");
   const [pathwayEditorDesc, setPathwayEditorDesc] = useState("");
 
@@ -469,9 +598,12 @@ export default function AdminPanel({
 
   // Search & Filter state variables
   const [reviewSearch, setReviewSearch] = useState("");
-  const [reviewStatusFilter, setReviewStatusFilter] = useState("pending_validation");
+  const [reviewStatusFilter, setReviewStatusFilter] =
+    useState("pending_validation");
   const [reviewTrackFilter, setReviewTrackFilter] = useState("all");
-  const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<string | null>(null);
+  const [expandedReviewStudentId, setExpandedReviewStudentId] = useState<
+    string | null
+  >(null);
   const [lockingStudentId, setLockingStudentId] = useState<string | null>(null);
   const [lockReasonInput, setLockReasonInput] = useState("");
 
@@ -530,19 +662,25 @@ export default function AdminPanel({
 
   // Recurrence states
   const [isRecurring, setIsRecurring] = useState(false);
-  const [recurrenceFrequency, setRecurrenceFrequency] = useState("one-time");
+  const [recurrenceFrequency, setRecurrenceFrequency] = useState("daily");
   const [recurrenceStartDate, setRecurrenceStartDate] = useState("");
   const [recurrenceEndDate, setRecurrenceEndDate] = useState("");
   const [recurrenceCustomInterval, setRecurrenceCustomInterval] = useState(1);
-  const [recurrenceEditMode, setRecurrenceEditMode] = useState<"single" | "future" | "all">("single");
-  const [deleteRecurrenceOption, setDeleteRecurrenceOption] = useState<"single" | "future" | "all">("single");
+  const [recurrenceEditMode, setRecurrenceEditMode] = useState<
+    "single" | "future" | "all"
+  >("single");
+  const [deleteRecurrenceOption, setDeleteRecurrenceOption] = useState<
+    "single" | "future" | "all"
+  >("single");
 
   // Custom Meeting specifications states
   const [meetingDuration, setMeetingDuration] = useState("60 minutes");
   const [meetingOrganizer, setMeetingOrganizer] = useState("Admin Team");
   const [meetingStatus, setMeetingStatus] = useState("Upcoming");
   const [meetingDescription, setMeetingDescription] = useState("");
-  const [meetingAssignedUsers, setMeetingAssignedUsers] = useState<string[]>([]);
+  const [meetingAssignedUsers, setMeetingAssignedUsers] = useState<string[]>(
+    [],
+  );
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [userSearchText, setUserSearchText] = useState("");
   const assignedUsersRef = useRef<HTMLDivElement>(null);
@@ -553,7 +691,9 @@ export default function AdminPanel({
   const [archiveTypeFilter, setArchiveTypeFilter] = useState("");
   const [archiveOrganizerFilter, setArchiveOrganizerFilter] = useState("");
   const [isArchiveRepoExpanded, setIsArchiveRepoExpanded] = useState(false);
-  const [expandedSeriesIds, setExpandedSeriesIds] = useState<Record<string, boolean>>({});
+  const [expandedSeriesIds, setExpandedSeriesIds] = useState<
+    Record<string, boolean>
+  >({});
 
   // Combobox dropdown state managers
   const [comboboxOpen, setComboboxOpen] = useState(false);
@@ -598,10 +738,18 @@ export default function AdminPanel({
     try {
       return new Intl.DateTimeFormat("en-US", {
         timeZone: "Africa/Lagos",
-        weekday: "long"
+        weekday: "long",
       }).format(currentDateState);
     } catch (e) {
-      const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const days = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+      ];
       return days[currentDateState.getDay()];
     }
   })();
@@ -611,13 +759,13 @@ export default function AdminPanel({
         timeZone: "Africa/Lagos",
         month: "long",
         day: "numeric",
-        year: "numeric"
+        year: "numeric",
       }).format(currentDateState);
     } catch (e) {
       return currentDateState.toLocaleDateString("en-US", {
         month: "long",
         day: "numeric",
-        year: "numeric"
+        year: "numeric",
       });
     }
   })();
@@ -626,14 +774,21 @@ export default function AdminPanel({
     if (meeting.status && meeting.status.trim().toLowerCase() === "archived") {
       return false;
     }
-    if (meeting.meetingDates && Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
+    if (
+      meeting.meetingDates &&
+      Array.isArray(meeting.meetingDates) &&
+      meeting.meetingDates.length > 0
+    ) {
       return meeting.meetingDates.includes(todayDateStr);
     }
-    const days = meeting.scheduleDays && meeting.scheduleDays.length > 0
-      ? meeting.scheduleDays
-      : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-      
-    return days.some((day: string) => day.trim().toLowerCase() === todayDayName.toLowerCase());
+    const days =
+      meeting.scheduleDays && meeting.scheduleDays.length > 0
+        ? meeting.scheduleDays
+        : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    return days.some(
+      (day: string) => day.trim().toLowerCase() === todayDayName.toLowerCase(),
+    );
   };
 
   const getAdminMeetingDateLabel = (meeting: any): string => {
@@ -641,7 +796,11 @@ export default function AdminPanel({
     if (isToday) {
       return `Today (${formattedTodayDate})`;
     }
-    if (meeting.meetingDates && Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
+    if (
+      meeting.meetingDates &&
+      Array.isArray(meeting.meetingDates) &&
+      meeting.meetingDates.length > 0
+    ) {
       const firstDateStr = meeting.meetingDates[0];
       try {
         const parts = firstDateStr.split("-");
@@ -653,15 +812,16 @@ export default function AdminPanel({
           return new Intl.DateTimeFormat("en-US", {
             month: "long",
             day: "numeric",
-            year: "numeric"
+            year: "numeric",
           }).format(d);
         }
       } catch (e) {}
       return firstDateStr;
     }
-    const days = meeting.scheduleDays && meeting.scheduleDays.length > 0
-      ? meeting.scheduleDays.join(", ")
-      : "Monday, Tuesday, Wednesday, Thursday, Friday";
+    const days =
+      meeting.scheduleDays && meeting.scheduleDays.length > 0
+        ? meeting.scheduleDays.join(", ")
+        : "Monday, Tuesday, Wednesday, Thursday, Friday";
     return `Upcoming: ${days}`;
   };
 
@@ -777,8 +937,11 @@ export default function AdminPanel({
   };
 
   // Attendance tracking state
-  const [expandedAttendanceMeetingId, setExpandedAttendanceMeetingId] = useState<string | null>(null);
-  const [attendanceFilterTab, setAttendanceFilterTab] = useState<"all" | "on_time" | "late" | "absent">("all");
+  const [expandedAttendanceMeetingId, setExpandedAttendanceMeetingId] =
+    useState<string | null>(null);
+  const [attendanceFilterTab, setAttendanceFilterTab] = useState<
+    "all" | "on_time" | "late" | "absent"
+  >("all");
 
   // Combobox list modifiers and search processors
   const handleSelectTrack = (track: string) => {
@@ -862,12 +1025,22 @@ export default function AdminPanel({
 
   // Synchronization selection and scope states
   const [syncModalOpen, setSyncModalOpen] = useState(false);
-  const [syncModalType, setSyncModalType] = useState<"save" | "delete" | null>(null);
+  const [syncModalType, setSyncModalType] = useState<"save" | "delete" | null>(
+    null,
+  );
   const [syncModalData, setSyncModalData] = useState<any>(null);
-  const [syncModalDeleteId, setSyncModalDeleteId] = useState<string | null>(null);
-  const [syncModalDeleteMode, setSyncModalDeleteMode] = useState<"single" | "future" | "all">("single");
-  const [selectedSyncOption, setSelectedSyncOption] = useState<"immediate" | "midnight">("immediate");
-  const [recurrenceEditOption, setRecurrenceEditOption] = useState<"single" | "future" | "all">("single");
+  const [syncModalDeleteId, setSyncModalDeleteId] = useState<string | null>(
+    null,
+  );
+  const [syncModalDeleteMode, setSyncModalDeleteMode] = useState<
+    "single" | "future" | "all"
+  >("single");
+  const [selectedSyncOption, setSelectedSyncOption] = useState<
+    "immediate" | "midnight"
+  >("immediate");
+  const [recurrenceEditOption, setRecurrenceEditOption] = useState<
+    "single" | "future" | "all"
+  >("single");
 
   // CSV table toggle/preview
   const [csvPreview, setCsvPreview] = useState(false);
@@ -908,7 +1081,10 @@ export default function AdminPanel({
   const uniqueTracksForDropdown = Array.from(
     new Set(allStandardUsers.map((u) => getCleanTrackName(u.track))),
   )
-    .filter((track: any) => track && typeof track === "string" && track.toLowerCase() !== "all")
+    .filter(
+      (track: any) =>
+        track && typeof track === "string" && track.toLowerCase() !== "all",
+    )
     .sort();
 
   // Filter funnel metrics by track if scoped
@@ -954,15 +1130,32 @@ export default function AdminPanel({
 
   // Counts & Filters for Student Validation & Reviews Tab
   const isPendingValidation = (status: string) =>
-    ["onboarding", "assessment_failed", "assessment_passed", "oriented"].includes(status);
+    [
+      "onboarding",
+      "assessment_failed",
+      "assessment_passed",
+      "oriented",
+    ].includes(status);
 
-  const pendingValidationCount = standardUsers.filter((u) => isPendingValidation(u.status)).length;
+  const pendingValidationCount = standardUsers.filter((u) =>
+    isPendingValidation(u.status),
+  ).length;
   const allCandidatesCount = standardUsers.length;
-  const onboardingCount = standardUsers.filter((u) => u.status === "onboarding").length;
-  const assessmentPassedCount = standardUsers.filter((u) => u.status === "assessment_passed").length;
-  const assessmentFailedCount = standardUsers.filter((u) => u.status === "assessment_failed").length;
-  const orientedCount = standardUsers.filter((u) => u.status === "oriented").length;
-  const activeDashboardCount = standardUsers.filter((u) => u.status === "dashboard").length;
+  const onboardingCount = standardUsers.filter(
+    (u) => u.status === "onboarding",
+  ).length;
+  const assessmentPassedCount = standardUsers.filter(
+    (u) => u.status === "assessment_passed",
+  ).length;
+  const assessmentFailedCount = standardUsers.filter(
+    (u) => u.status === "assessment_failed",
+  ).length;
+  const orientedCount = standardUsers.filter(
+    (u) => u.status === "oriented",
+  ).length;
+  const activeDashboardCount = standardUsers.filter(
+    (u) => u.status === "dashboard",
+  ).length;
 
   // Filter standard users for the Reviews tab
   const filteredUsersForReviews = standardUsers.filter((u) => {
@@ -976,8 +1169,8 @@ export default function AdminPanel({
       reviewStatusFilter === "all"
         ? true
         : reviewStatusFilter === "pending_validation"
-        ? isPendingValidation(u.status)
-        : u.status === reviewStatusFilter;
+          ? isPendingValidation(u.status)
+          : u.status === reviewStatusFilter;
 
     const matchesTrack =
       reviewTrackFilter === "all" ||
@@ -1008,12 +1201,11 @@ export default function AdminPanel({
   const handleStudentAction = async (studentId: string, action: string) => {
     setLoading(true);
     try {
-      const reviewerName = adminProfile.fullName || adminProfile.username || "Tech Mentor";
+      const reviewerName =
+        adminProfile.fullName || adminProfile.username || "Tech Mentor";
       await reviewStudent(studentId, action, reviewerName);
 
-      triggerSuccess(
-        `Learner onboarding & placement confirmed successfully!`
-      );
+      triggerSuccess(`Learner onboarding & placement confirmed successfully!`);
       onStateUpdate();
     } catch (e: any) {
       triggerError("Placement failed: " + e.message);
@@ -1029,9 +1221,16 @@ export default function AdminPanel({
     }
     setLoading(true);
     try {
-      const reviewerName = adminProfile.fullName || adminProfile.username || "Tech Mentor";
-      await lockStudentDashboard(studentId, lockReasonInput.trim(), reviewerName);
-      triggerSuccess("Learner dashboard locked successfully! Learner will be notified immediately.");
+      const reviewerName =
+        adminProfile.fullName || adminProfile.username || "Tech Mentor";
+      await lockStudentDashboard(
+        studentId,
+        lockReasonInput.trim(),
+        reviewerName,
+      );
+      triggerSuccess(
+        "Learner dashboard locked successfully! Learner will be notified immediately.",
+      );
       setLockingStudentId(null);
       setLockReasonInput("");
       onStateUpdate();
@@ -1086,7 +1285,12 @@ export default function AdminPanel({
     setLoading(true);
     try {
       const score = 100; // default/placeholder or computed if any
-      await gradeDrillSubmission(gradingSubId, score, gradingFeedback, gradingStatus);
+      await gradeDrillSubmission(
+        gradingSubId,
+        score,
+        gradingFeedback,
+        gradingStatus,
+      );
 
       setGradingSubId("");
       setGradingFeedback("");
@@ -1146,7 +1350,13 @@ export default function AdminPanel({
     }
     setLoading(true);
     try {
-      await assignTask(studentId, customTaskTitle, customTaskDesc, customTaskDue, customTaskPriority as any);
+      await assignTask(
+        studentId,
+        customTaskTitle,
+        customTaskDesc,
+        customTaskDue,
+        customTaskPriority as any,
+      );
 
       triggerSuccess(
         `Task "${customTaskTitle}" custom-assigned successfully to student.`,
@@ -1191,9 +1401,13 @@ export default function AdminPanel({
     }
     if (!allowPastDates) {
       const todayStr = getLagosDateString(new Date());
-      const hasPastDate = finalMeetingDates.some(dateStr => dateStr < todayStr);
+      const hasPastDate = finalMeetingDates.some(
+        (dateStr) => dateStr < todayStr,
+      );
       if (hasPastDate) {
-        triggerError("Cannot select past dates unless 'Allow Past Dates' is explicitly enabled in system settings.");
+        triggerError(
+          "Cannot select past dates unless 'Allow Past Dates' is explicitly enabled in system settings.",
+        );
         return;
       }
     }
@@ -1217,13 +1431,28 @@ export default function AdminPanel({
       description: meetingDescription,
       // Recurrence parameters
       isRecurring,
-      recurrenceFrequency: isRecurring ? recurrenceFrequency : undefined,
-      recurrenceStartDate: isRecurring ? recurrenceStartDate : undefined,
+      recurrenceFrequency: isRecurring
+        ? !recurrenceFrequency || recurrenceFrequency === "one-time"
+          ? "daily"
+          : recurrenceFrequency
+        : undefined,
+      recurrenceStartDate: isRecurring
+        ? recurrenceStartDate || finalMeetingDates[0] || getLagosDateString(new Date())
+        : undefined,
       recurrenceEndDate: isRecurring ? recurrenceEndDate : undefined,
-      recurrenceCustomInterval: isRecurring && recurrenceFrequency === "custom" ? recurrenceCustomInterval : undefined,
+      recurrenceCustomInterval:
+        isRecurring && recurrenceFrequency === "custom"
+          ? recurrenceCustomInterval
+          : undefined,
       recurrenceEditMode: editingMeetingId ? recurrenceEditOption : undefined,
-      seriesId: editingMeetingId ? (state.meetings.find((m: any) => m.id === editingMeetingId)?.seriesId || undefined) : undefined,
-      occurrenceDate: editingMeetingId ? (state.meetings.find((m: any) => m.id === editingMeetingId)?.occurrenceDate || undefined) : undefined,
+      seriesId: editingMeetingId
+        ? state.meetings.find((m: any) => m.id === editingMeetingId)
+            ?.seriesId || undefined
+        : undefined,
+      occurrenceDate: editingMeetingId
+        ? state.meetings.find((m: any) => m.id === editingMeetingId)
+            ?.occurrenceDate || undefined
+        : undefined,
     };
 
     setSyncModalData(meetingData);
@@ -1234,7 +1463,10 @@ export default function AdminPanel({
   };
 
   // Intercept Delete to use the Sync Selection Modal
-  const handleInitiateDelete = (meetingId: string, deleteMode: "single" | "future" | "all") => {
+  const handleInitiateDelete = (
+    meetingId: string,
+    deleteMode: "single" | "future" | "all",
+  ) => {
     setSyncModalDeleteId(meetingId);
     setSyncModalDeleteMode(deleteMode);
     setSyncModalType("delete");
@@ -1250,7 +1482,11 @@ export default function AdminPanel({
       // 45-second safety timeout to prevent getting stuck on heavy database operations
       const timeoutPromise = new Promise<void>((_, reject) => {
         setTimeout(() => {
-          reject(new Error("The operation timed out. The database may still be processing in the background, but please check your network and try again."));
+          reject(
+            new Error(
+              "The operation timed out. The database may still be processing in the background, but please check your network and try again.",
+            ),
+          );
         }, 45000);
       });
 
@@ -1258,16 +1494,25 @@ export default function AdminPanel({
         if (syncModalType === "save") {
           const payload = {
             ...syncModalData,
-            recurrenceEditMode: syncModalData.seriesId ? recurrenceEditOption : undefined
+            recurrenceEditMode: syncModalData.seriesId
+              ? recurrenceEditOption
+              : undefined,
           };
-          await saveMeeting(payload, adminProfile, selectedSyncOption, state.profiles);
-          
+          await saveMeeting(
+            payload,
+            adminProfile,
+            selectedSyncOption,
+            state.profiles,
+          );
+
           triggerSuccess(
             selectedSyncOption === "immediate"
-              ? (editingMeetingId ? "Meeting updated and synced immediately!" : "New meeting scheduled and synced immediately!")
-              : "Meeting changes queued for midnight synchronization."
+              ? editingMeetingId
+                ? "Meeting updated and synced immediately!"
+                : "New meeting scheduled and synced immediately!"
+              : "Meeting changes queued for midnight synchronization.",
           );
-          
+
           // Reset states
           setEditingMeetingId(null);
           setMeetingTitle("");
@@ -1301,12 +1546,18 @@ export default function AdminPanel({
           setRecurrenceEditMode("single");
         } else if (syncModalType === "delete") {
           if (syncModalDeleteId) {
-            await deleteMeeting(syncModalDeleteId, syncModalDeleteMode, adminProfile, selectedSyncOption, state.profiles);
-            
+            await deleteMeeting(
+              syncModalDeleteId,
+              syncModalDeleteMode,
+              adminProfile,
+              selectedSyncOption,
+              state.profiles,
+            );
+
             triggerSuccess(
               selectedSyncOption === "immediate"
                 ? "Meeting deleted and synced immediately."
-                : "Meeting deletion queued for midnight synchronization."
+                : "Meeting deletion queued for midnight synchronization.",
             );
             if (syncModalDeleteId === editingMeetingId) {
               setEditingMeetingId(null);
@@ -1316,7 +1567,7 @@ export default function AdminPanel({
       })();
 
       await Promise.race([actionPromise, timeoutPromise]);
-      
+
       setSyncModalOpen(false);
       setSyncModalType(null);
       setSyncModalData(null);
@@ -1345,14 +1596,18 @@ export default function AdminPanel({
         // Create safety timeout promise
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
-            reject(new Error(`Synchronization request timed out after ${syncTimeoutSec} seconds.`));
+            reject(
+              new Error(
+                `Synchronization request timed out after ${syncTimeoutSec} seconds.`,
+              ),
+            );
           }, syncTimeoutSec * 1000);
         });
 
         // Race the sync function against the safety timeout
         const result = await Promise.race([
           synchronizeMeetings(),
-          timeoutPromise
+          timeoutPromise,
         ]);
 
         setSyncLogs((prev) => [
@@ -1380,7 +1635,9 @@ export default function AdminPanel({
     try {
       const { updateAppConfigField } = await import("../firebaseService");
       await updateAppConfigField("autoMidnightSyncEnabled", enabled);
-      triggerSuccess(`Midnight Sync successfully ${enabled ? "enabled" : "disabled"}!`);
+      triggerSuccess(
+        `Midnight Sync successfully ${enabled ? "enabled" : "disabled"}!`,
+      );
       onStateUpdate();
     } catch (e: any) {
       triggerError("Failed to update midnight sync setting: " + e.message);
@@ -1423,7 +1680,8 @@ export default function AdminPanel({
   const handlePurgeDatabase = () => {
     showConfirm({
       title: "Purge All Mock & Seed Data",
-      message: "Are you absolutely sure you want to purge all mock and transaction data? This will clear all meetings, drills, projects, standups, and student profiles from Firestore. This action is IRREVERSIBLE.",
+      message:
+        "Are you absolutely sure you want to purge all mock and transaction data? This will clear all meetings, drills, projects, standups, and student profiles from Firestore. This action is IRREVERSIBLE.",
       confirmText: "🗑️ Yes, Purge Everything",
       isDanger: true,
       onConfirm: async () => {
@@ -1433,14 +1691,16 @@ export default function AdminPanel({
         try {
           const { purgeDatabase } = await import("../seed");
           await purgeDatabase(adminProfile?.id);
-          triggerSuccess("Database successfully purged! All seed data has been deleted and you have a completely fresh workspace.");
+          triggerSuccess(
+            "Database successfully purged! All seed data has been deleted and you have a completely fresh workspace.",
+          );
           onStateUpdate();
         } catch (err: any) {
           triggerError("Failed to purge database: " + err.message);
         } finally {
           setPurgingDb(false);
         }
-      }
+      },
     });
   };
 
@@ -1448,7 +1708,8 @@ export default function AdminPanel({
   const handleSeedDatabase = () => {
     showConfirm({
       title: "Seed Default Configurations",
-      message: "Are you sure you want to seed default configurations (tasks, microservices, pathways) into the database?",
+      message:
+        "Are you sure you want to seed default configurations (tasks, microservices, pathways) into the database?",
       confirmText: "🌱 Yes, Seed Database",
       isDanger: false,
       onConfirm: async () => {
@@ -1458,19 +1719,21 @@ export default function AdminPanel({
         try {
           const { seedDatabase } = await import("../seed");
           await seedDatabase(true); // force = true to override
-          triggerSuccess("Database successfully configured with default tasks, microservices, and pathways.");
+          triggerSuccess(
+            "Database successfully configured with default tasks, microservices, and pathways.",
+          );
           onStateUpdate();
         } catch (err: any) {
           triggerError("Failed to seed database: " + err.message);
         } finally {
           setSeedingDb(false);
         }
-      }
+      },
     });
   };
 
   // --- CONFIGURATIONS DIRECT CRUDS (Tasks, Microservices, Career Pathways) ---
-  
+
   // Default Tasks
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1497,13 +1760,17 @@ export default function AdminPanel({
         triggerError("Failed to add task: " + err.message);
       }
     } else if (editingTaskId) {
-      const updated = currentTasks.map(t => t.id === editingTaskId ? {
-        ...t,
-        title: taskEditorTitle.trim(),
-        description: taskEditorDesc.trim(),
-        due: taskEditorDue.trim(),
-        priority: taskEditorPriority,
-      } : t);
+      const updated = currentTasks.map((t) =>
+        t.id === editingTaskId
+          ? {
+              ...t,
+              title: taskEditorTitle.trim(),
+              description: taskEditorDesc.trim(),
+              due: taskEditorDue.trim(),
+              priority: taskEditorPriority,
+            }
+          : t,
+      );
       try {
         await updateAppConfigField("tasks", updated);
         triggerSuccess("Default task updated successfully!");
@@ -1523,7 +1790,7 @@ export default function AdminPanel({
       isDanger: true,
       onConfirm: async () => {
         const currentTasks = [...(state.tasks || [])];
-        const updated = currentTasks.filter(t => t.id !== id);
+        const updated = currentTasks.filter((t) => t.id !== id);
         try {
           await updateAppConfigField("tasks", updated);
           triggerSuccess("Default task deleted successfully!");
@@ -1531,7 +1798,7 @@ export default function AdminPanel({
         } catch (err: any) {
           triggerError("Failed to delete task: " + err.message);
         }
-      }
+      },
     });
   };
 
@@ -1579,15 +1846,19 @@ export default function AdminPanel({
         triggerError("Failed to add microservice: " + err.message);
       }
     } else if (editingMicroserviceId) {
-      const updated = currentMs.map(ms => ms.id === editingMicroserviceId ? {
-        ...ms,
-        title: msEditorTitle.trim(),
-        description: msEditorDesc.trim(),
-        linkText: msEditorLinkText.trim(),
-        tab: msEditorTab.trim(),
-        subTab: msEditorSubTab.trim(),
-        icon: msEditorIcon.trim(),
-      } : ms);
+      const updated = currentMs.map((ms) =>
+        ms.id === editingMicroserviceId
+          ? {
+              ...ms,
+              title: msEditorTitle.trim(),
+              description: msEditorDesc.trim(),
+              linkText: msEditorLinkText.trim(),
+              tab: msEditorTab.trim(),
+              subTab: msEditorSubTab.trim(),
+              icon: msEditorIcon.trim(),
+            }
+          : ms,
+      );
       try {
         await updateAppConfigField("microservices", updated);
         triggerSuccess("Dashboard microservice updated successfully!");
@@ -1602,12 +1873,13 @@ export default function AdminPanel({
   const handleDeleteMicroservice = (id: string) => {
     showConfirm({
       title: "Delete Microservice",
-      message: "Are you sure you want to delete this microservice from the dashboard?",
+      message:
+        "Are you sure you want to delete this microservice from the dashboard?",
       confirmText: "🗑️ Delete Microservice",
       isDanger: true,
       onConfirm: async () => {
         const currentMs = [...(state.microservices || [])];
-        const updated = currentMs.filter(ms => ms.id !== id);
+        const updated = currentMs.filter((ms) => ms.id !== id);
         try {
           await updateAppConfigField("microservices", updated);
           triggerSuccess("Microservice deleted successfully!");
@@ -1615,7 +1887,7 @@ export default function AdminPanel({
         } catch (err: any) {
           triggerError("Failed to delete microservice: " + err.message);
         }
-      }
+      },
     });
   };
 
@@ -1646,7 +1918,9 @@ export default function AdminPanel({
       triggerError("Step title is required.");
       return;
     }
-    const pathways = state.careerPathways ? { ...state.careerPathways } : { foundation: [], trackSplit: [], lateralRoles: [] };
+    const pathways = state.careerPathways
+      ? { ...state.careerPathways }
+      : { foundation: [], trackSplit: [], lateralRoles: [] };
     const section = editingPathwaySection!;
     const index = editingPathwayIndex;
 
@@ -1678,17 +1952,22 @@ export default function AdminPanel({
     }
   };
 
-  const handleDeletePathwayStep = (section: "foundation" | "trackSplit" | "lateralRoles", index: number) => {
+  const handleDeletePathwayStep = (
+    section: "foundation" | "trackSplit" | "lateralRoles",
+    index: number,
+  ) => {
     showConfirm({
       title: "Delete Pathway Step",
       message: `Are you sure you want to delete this step from the ${section} section?`,
       confirmText: "🗑️ Delete Step",
       isDanger: true,
       onConfirm: async () => {
-        const pathways = state.careerPathways ? { ...state.careerPathways } : { foundation: [], trackSplit: [], lateralRoles: [] };
+        const pathways = state.careerPathways
+          ? { ...state.careerPathways }
+          : { foundation: [], trackSplit: [], lateralRoles: [] };
         const list = [...(pathways[section] || [])];
         list.splice(index, 1);
-        
+
         const updatedPathways = {
           ...pathways,
           [section]: list,
@@ -1701,11 +1980,15 @@ export default function AdminPanel({
         } catch (err: any) {
           triggerError("Failed to delete step: " + err.message);
         }
-      }
+      },
     });
   };
 
-  const startEditPathway = (section: "foundation" | "trackSplit" | "lateralRoles", index: number, step?: any) => {
+  const startEditPathway = (
+    section: "foundation" | "trackSplit" | "lateralRoles",
+    index: number,
+    step?: any,
+  ) => {
     setEditingPathwaySection(section);
     setEditingPathwayIndex(index);
     if (step) {
@@ -1745,17 +2028,29 @@ export default function AdminPanel({
     );
   };
 
-  const tabDetails: Record<string, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
+  const tabDetails: Record<
+    string,
+    { label: string; icon: React.ComponentType<{ className?: string }> }
+  > = {
     funnel: { label: "Operations Funnel", icon: BarChart4 },
-    reviews: { label: `Student Reviews (${standardUsers.filter((u) => u.status !== "dashboard").length})`, icon: Users },
-    drills: { label: `Weekly Drills (${state.drillSubmissions.filter((s) => s.status === "Pending").length})`, icon: Award },
-    meetings: { label: `Meetings Management (${state.meetings.length})`, icon: Calendar },
+    reviews: {
+      label: `Student Reviews (${standardUsers.filter((u) => u.status !== "dashboard").length})`,
+      icon: Users,
+    },
+    drills: {
+      label: `Weekly Drills (${state.drillSubmissions.filter((s) => s.status === "Pending").length})`,
+      icon: Award,
+    },
+    meetings: {
+      label: `Meetings Management (${state.meetings.length})`,
+      icon: Calendar,
+    },
     reminders: { label: "Warning Dispatches", icon: Send },
     cron: { label: "00:00 WAT Cron Sync", icon: Cpu },
     export: { label: "Export Ledger CSV", icon: FileDown },
     owners: { label: "Module Owners", icon: ShieldCheck },
     levels: { label: "Levels Promotion Desk", icon: Users },
-    kd_desk: { label: "KD Desk (Knowledge Check)", icon: BookOpen },
+    kd_desk: { label: "KD Microservice (Knowledge Check)", icon: BookOpen },
     pd_desk: { label: "PD Desk (Project Delivery)", icon: FileEdit },
     standup_desk: { label: "Standup Compliance Desk", icon: Calendar },
     attendance_history: { label: "Attendance Ledger History", icon: History },
@@ -1770,50 +2065,99 @@ export default function AdminPanel({
       label: "Core Operations",
       items: [
         { id: "funnel", label: "Operations Funnel", icon: BarChart4 },
-        { id: "reviews", label: `Student Reviews (${standardUsers.filter((u) => u.status !== "dashboard").length})`, icon: Users },
-        { id: "drills", label: `Weekly Drills (${state.drillSubmissions.filter((s) => s.status === "Pending").length})`, icon: Award },
-        { id: "meetings", label: `Meetings Management (${state.meetings.length})`, icon: Calendar },
-      ]
+        {
+          id: "reviews",
+          label: `Student Reviews (${standardUsers.filter((u) => u.status !== "dashboard").length})`,
+          icon: Users,
+        },
+        {
+          id: "drills",
+          label: `Weekly Drills (${state.drillSubmissions.filter((s) => s.status === "Pending").length})`,
+          icon: Award,
+        },
+        {
+          id: "meetings",
+          label: `Meetings Management (${state.meetings.length})`,
+          icon: Calendar,
+        },
+      ],
     },
     {
       label: "Desks & Registers",
       items: [
-        { id: "kd_desk", label: "📚 KD Desk (Knowledge Check)", icon: BookOpen },
-        { id: "pd_desk", label: "💡 PD Desk (Project Delivery)", icon: FileEdit },
+        {
+          id: "kd_desk",
+          label: "📚 KD Microservice (Knowledge Check)",
+          icon: BookOpen,
+        },
+        {
+          id: "pd_desk",
+          label: "💡 PD Desk (Project Delivery)",
+          icon: FileEdit,
+        },
         { id: "standup_desk", label: "☀️ Standup Desk", icon: Calendar },
-        { id: "attendance_history", label: "📋 Attendance Ledger", icon: History },
+        {
+          id: "attendance_history",
+          label: "📋 Attendance Ledger",
+          icon: History,
+        },
         { id: "levels", label: "📈 Levels Promotion Desk", icon: Users },
         { id: "reminders", label: "Warning Dispatches", icon: Send },
-      ]
+      ],
     },
     {
       label: "System & Config",
       items: [
         { id: "cron", label: "00:00 WAT Cron Sync", icon: Cpu },
-        { id: "sync_logs", label: "🔄 Sync & Error Audit Logs", icon: RefreshCw },
+        {
+          id: "sync_logs",
+          label: "🔄 Sync & Error Audit Logs",
+          icon: RefreshCw,
+        },
         { id: "export", label: "Export Ledger CSV", icon: FileDown },
         { id: "owners", label: "👥 Module Owners", icon: ShieldCheck },
-        { id: "tasks_config", label: "⚙️ Default Tasks Config", icon: Settings },
-        { id: "microservices_config", label: "🔌 Microservices Config", icon: Layers },
-        { id: "pathways_config", label: "🎓 Career Pathways Config", icon: GraduationCap },
-      ]
-    }
+        {
+          id: "tasks_config",
+          label: "⚙️ Default Tasks Config",
+          icon: Settings,
+        },
+        {
+          id: "microservices_config",
+          label: "🔌 Microservices Config",
+          icon: Layers,
+        },
+        {
+          id: "pathways_config",
+          label: "🎓 Career Pathways Config",
+          icon: GraduationCap,
+        },
+      ],
+    },
   ];
 
-  const activeTabInfo = tabDetails[adminTab] || { label: "Select View", icon: Filter };
+  const activeTabInfo = tabDetails[adminTab] || {
+    label: "Select View",
+    icon: Filter,
+  };
   const ActiveIcon = activeTabInfo.icon;
 
   return (
     <div className="space-y-6" id="admin-module-root">
       {/* Dropdown-based Sub Tabs Menu */}
-      <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-3xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none animate-fade-in" id="admin-view-selector-container">
+      <div
+        className="bg-white p-4 rounded-xl border border-gray-150 shadow-3xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none animate-fade-in"
+        id="admin-view-selector-container"
+      >
         <div>
           <h3 className="text-sm font-extrabold text-gray-950 flex items-center gap-1.5">
-            <span className="p-1 bg-[#4B5E40]/10 text-[#4B5E40] rounded">🛡️</span>
+            <span className="p-1 bg-[#4B5E40]/10 text-[#4B5E40] rounded">
+              🛡️
+            </span>
             Administrative Operations
           </h3>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Switch between analytical funnels, student compliance reviews, configuration desks, and logs.
+            Switch between analytical funnels, student compliance reviews,
+            configuration desks, and logs.
           </p>
         </div>
 
@@ -1828,11 +2172,13 @@ export default function AdminPanel({
               <ActiveIcon className="w-4 h-4 text-[#4B5E40]" />
               {activeTabInfo.label}
             </span>
-            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`} />
+            <ChevronDown
+              className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isDropdownOpen ? "rotate-180" : ""}`}
+            />
           </button>
 
           {isDropdownOpen && (
-            <div 
+            <div
               className="absolute right-0 mt-2 w-full sm:w-85 max-h-96 overflow-y-auto bg-white rounded-xl border border-gray-150 shadow-xl z-50 py-2 divide-y divide-gray-100 animate-slide-in scrollbar-thin scrollbar-thumb-gray-200"
               id="admin-dropdown-menu"
             >
@@ -1854,22 +2200,28 @@ export default function AdminPanel({
                             setIsDropdownOpen(false);
                             setErrorMsg("");
                             setSuccessMsg("");
-                            if (item.id === "tasks_config") setEditingTaskId(null);
-                            if (item.id === "microservices_config") setEditingMicroserviceId(null);
+                            if (item.id === "tasks_config")
+                              setEditingTaskId(null);
+                            if (item.id === "microservices_config")
+                              setEditingMicroserviceId(null);
                             if (item.id === "pathways_config") {
                               setEditingPathwaySection(null);
                               setEditingPathwayIndex(null);
                             }
                           }}
                           className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition text-left cursor-pointer ${
-                            isSelected 
-                              ? "bg-[#4B5E40] text-white font-bold" 
+                            isSelected
+                              ? "bg-[#4B5E40] text-white font-bold"
                               : "text-gray-700 hover:bg-gray-50 hover:text-gray-950"
                           }`}
                         >
-                          <ItemIcon className={`w-4 h-4 ${isSelected ? "text-white" : "text-[#4B5E40]"}`} />
+                          <ItemIcon
+                            className={`w-4 h-4 ${isSelected ? "text-white" : "text-[#4B5E40]"}`}
+                          />
                           <span className="truncate">{item.label}</span>
-                          {isSelected && <span className="ml-auto text-xs">✓</span>}
+                          {isSelected && (
+                            <span className="ml-auto text-xs">✓</span>
+                          )}
                         </button>
                       );
                     })}
@@ -1920,7 +2272,8 @@ export default function AdminPanel({
                 ⚙️ Default Ongoing Tasks Configurations
               </h3>
               <p className="text-[11px] text-gray-500 mt-0.5">
-                Configure default ongoing tasks assigned to students. Changes propagate instantly to all student dashboards.
+                Configure default ongoing tasks assigned to students. Changes
+                propagate instantly to all student dashboards.
               </p>
             </div>
             {editingTaskId === null && (
@@ -1934,13 +2287,20 @@ export default function AdminPanel({
           </div>
 
           {editingTaskId !== null ? (
-            <form onSubmit={handleSaveTask} className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in">
+            <form
+              onSubmit={handleSaveTask}
+              className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in"
+            >
               <h4 className="font-extrabold text-xs uppercase tracking-wide text-gray-500">
-                {editingTaskId === "new" ? "➕ Create New Default Task" : "✏️ Edit Default Task"}
+                {editingTaskId === "new"
+                  ? "➕ Create New Default Task"
+                  : "✏️ Edit Default Task"}
               </h4>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-700">Task Title</label>
+                <label className="text-[11px] font-bold text-gray-700">
+                  Task Title
+                </label>
                 <input
                   type="text"
                   required
@@ -1952,7 +2312,9 @@ export default function AdminPanel({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-700">Task Description</label>
+                <label className="text-[11px] font-bold text-gray-700">
+                  Task Description
+                </label>
                 <textarea
                   placeholder="Describe task expectations clearly..."
                   value={taskEditorDesc}
@@ -1964,7 +2326,9 @@ export default function AdminPanel({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Due String / Frequency</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Due String / Frequency
+                  </label>
                   <input
                     type="text"
                     required
@@ -1976,10 +2340,14 @@ export default function AdminPanel({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Priority Level</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Priority Level
+                  </label>
                   <select
                     value={taskEditorPriority}
-                    onChange={(e) => setTaskEditorPriority(e.target.value as any)}
+                    onChange={(e) =>
+                      setTaskEditorPriority(e.target.value as any)
+                    }
                     className="w-full px-3 py-2 border border-gray-250 rounded-xl text-xs focus:ring-1 focus:ring-[#4B5E40] focus:outline-none bg-white text-gray-800"
                   >
                     <option value="High">High</option>
@@ -2008,19 +2376,24 @@ export default function AdminPanel({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {(state.tasks || []).map((t) => (
-                <div key={t.id} className="bg-white p-5 rounded-xl border border-gray-150 hover:border-gray-300 transition shadow-xs flex flex-col justify-between space-y-4">
+                <div
+                  key={t.id}
+                  className="bg-white p-5 rounded-xl border border-gray-150 hover:border-gray-300 transition shadow-xs flex flex-col justify-between space-y-4"
+                >
                   <div className="space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <h4 className="font-extrabold text-xs sm:text-sm text-gray-950 leading-tight">
                         {t.title}
                       </h4>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold shrink-0 border ${
-                        t.priority === "High"
-                          ? "bg-rose-50 text-rose-700 border-rose-100"
-                          : t.priority === "Medium"
-                          ? "bg-amber-50 text-amber-700 border-amber-100"
-                          : "bg-blue-50 text-blue-700 border-blue-100"
-                      }`}>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold shrink-0 border ${
+                          t.priority === "High"
+                            ? "bg-rose-50 text-rose-700 border-rose-100"
+                            : t.priority === "Medium"
+                              ? "bg-amber-50 text-amber-700 border-amber-100"
+                              : "bg-blue-50 text-blue-700 border-blue-100"
+                        }`}
+                      >
                         {t.priority}
                       </span>
                     </div>
@@ -2054,7 +2427,8 @@ export default function AdminPanel({
               ))}
               {(state.tasks || []).length === 0 && (
                 <div className="col-span-full bg-white p-12 text-center rounded-xl border border-dashed border-gray-250 text-gray-400">
-                  No default tasks found. Click "Add New Default Task" to create one.
+                  No default tasks found. Click "Add New Default Task" to create
+                  one.
                 </div>
               )}
             </div>
@@ -2063,14 +2437,18 @@ export default function AdminPanel({
       )}
 
       {adminTab === "microservices_config" && (
-        <div className="space-y-6 animate-fade-in" id="microservices-config-tab-root">
+        <div
+          className="space-y-6 animate-fade-in"
+          id="microservices-config-tab-root"
+        >
           <div className="bg-white p-5 rounded-xl border border-gray-150 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
               <h3 className="font-extrabold text-sm text-gray-950 flex items-center gap-1.5">
                 🔌 Dashboard Microservices Configurations
               </h3>
               <p className="text-[11px] text-gray-500 mt-0.5">
-                Manage the active modules and links rendered on student hub grids.
+                Manage the active modules and links rendered on student hub
+                grids.
               </p>
             </div>
             {editingMicroserviceId === null && (
@@ -2084,14 +2462,21 @@ export default function AdminPanel({
           </div>
 
           {editingMicroserviceId !== null ? (
-            <form onSubmit={handleSaveMicroservice} className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in">
+            <form
+              onSubmit={handleSaveMicroservice}
+              className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in"
+            >
               <h4 className="font-extrabold text-xs uppercase tracking-wide text-gray-500">
-                {editingMicroserviceId === "new" ? "➕ Create Dashboard Microservice" : "✏️ Edit Dashboard Microservice"}
+                {editingMicroserviceId === "new"
+                  ? "➕ Create Dashboard Microservice"
+                  : "✏️ Edit Dashboard Microservice"}
               </h4>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Microservice Title</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Microservice Title
+                  </label>
                   <input
                     type="text"
                     required
@@ -2103,7 +2488,9 @@ export default function AdminPanel({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Link Text Action</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Link Text Action
+                  </label>
                   <input
                     type="text"
                     required
@@ -2116,7 +2503,9 @@ export default function AdminPanel({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-700">Short Description</label>
+                <label className="text-[11px] font-bold text-gray-700">
+                  Short Description
+                </label>
                 <textarea
                   placeholder="Explain microservice scope..."
                   value={msEditorDesc}
@@ -2128,7 +2517,9 @@ export default function AdminPanel({
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Target Tab</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Target Tab
+                  </label>
                   <input
                     type="text"
                     required
@@ -2140,7 +2531,9 @@ export default function AdminPanel({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Target Sub-Tab (Optional)</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Target Sub-Tab (Optional)
+                  </label>
                   <input
                     type="text"
                     placeholder="e.g. drills"
@@ -2151,7 +2544,9 @@ export default function AdminPanel({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-700">Lucide Icon name</label>
+                  <label className="text-[11px] font-bold text-gray-700">
+                    Lucide Icon name
+                  </label>
                   <select
                     value={msEditorIcon}
                     onChange={(e) => setMsEditorIcon(e.target.value)}
@@ -2188,19 +2583,41 @@ export default function AdminPanel({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(state.microservices || []).map((ms) => (
-                <div key={ms.id} className="bg-white p-5 rounded-xl border border-gray-150 flex flex-col justify-between space-y-4 shadow-2xs">
+                <div
+                  key={ms.id}
+                  className="bg-white p-5 rounded-xl border border-gray-150 flex flex-col justify-between space-y-4 shadow-2xs"
+                >
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
-                        {ms.icon === "BookOpen" && <BookOpen className="w-4 h-4" />}
+                        {ms.icon === "BookOpen" && (
+                          <BookOpen className="w-4 h-4" />
+                        )}
                         {ms.icon === "Award" && <Award className="w-4 h-4" />}
                         {ms.icon === "Users" && <Users className="w-4 h-4" />}
-                        {ms.icon === "Calendar" && <Calendar className="w-4 h-4" />}
+                        {ms.icon === "Calendar" && (
+                          <Calendar className="w-4 h-4" />
+                        )}
                         {ms.icon === "Laptop" && <Laptop className="w-4 h-4" />}
-                        {ms.icon === "Compass" && <Compass className="w-4 h-4" />}
-                        {ms.icon === "Sparkles" && <Sparkles className="w-4 h-4" />}
-                        {ms.icon === "Settings" && <Settings className="w-4 h-4" />}
-                        {!["BookOpen", "Award", "Users", "Calendar", "Laptop", "Compass", "Sparkles", "Settings"].includes(ms.icon) && <Settings className="w-4 h-4" />}
+                        {ms.icon === "Compass" && (
+                          <Compass className="w-4 h-4" />
+                        )}
+                        {ms.icon === "Sparkles" && (
+                          <Sparkles className="w-4 h-4" />
+                        )}
+                        {ms.icon === "Settings" && (
+                          <Settings className="w-4 h-4" />
+                        )}
+                        {![
+                          "BookOpen",
+                          "Award",
+                          "Users",
+                          "Calendar",
+                          "Laptop",
+                          "Compass",
+                          "Sparkles",
+                          "Settings",
+                        ].includes(ms.icon) && <Settings className="w-4 h-4" />}
                       </div>
                       <h4 className="font-extrabold text-xs sm:text-sm text-gray-950 font-sans">
                         {ms.title}
@@ -2245,7 +2662,8 @@ export default function AdminPanel({
               ))}
               {(state.microservices || []).length === 0 && (
                 <div className="col-span-full bg-white p-12 text-center rounded-xl border border-dashed border-gray-250 text-gray-400">
-                  No dashboard microservices configured. Click "Add New Microservice" to create one.
+                  No dashboard microservices configured. Click "Add New
+                  Microservice" to create one.
                 </div>
               )}
             </div>
@@ -2254,24 +2672,35 @@ export default function AdminPanel({
       )}
 
       {adminTab === "pathways_config" && (
-        <div className="space-y-6 animate-fade-in" id="pathways-config-tab-root">
+        <div
+          className="space-y-6 animate-fade-in"
+          id="pathways-config-tab-root"
+        >
           <div className="bg-white p-5 rounded-xl border border-gray-150">
             <h3 className="font-extrabold text-sm text-gray-950 flex items-center gap-1.5">
               🎓 Career Pathways Step Configurations
             </h3>
             <p className="text-[11px] text-gray-500 mt-0.5">
-              Edit the three structured career pathways presented to students on their pathway milestones page.
+              Edit the three structured career pathways presented to students on
+              their pathway milestones page.
             </p>
           </div>
 
           {editingPathwaySection !== null ? (
-            <form onSubmit={handleSavePathwayStep} className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in">
+            <form
+              onSubmit={handleSavePathwayStep}
+              className="bg-white p-6 rounded-xl border border-gray-150 space-y-4 max-w-2xl mx-auto animate-fade-in"
+            >
               <h4 className="font-extrabold text-xs uppercase tracking-wide text-[#4B5E40]">
-                {editingPathwayIndex === -1 ? `➕ Add Step to: ${editingPathwaySection}` : `✏️ Edit Step in: ${editingPathwaySection}`}
+                {editingPathwayIndex === -1
+                  ? `➕ Add Step to: ${editingPathwaySection}`
+                  : `✏️ Edit Step in: ${editingPathwaySection}`}
               </h4>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-700">Step Title</label>
+                <label className="text-[11px] font-bold text-gray-700">
+                  Step Title
+                </label>
                 <input
                   type="text"
                   required
@@ -2283,7 +2712,9 @@ export default function AdminPanel({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[11px] font-bold text-gray-700">Step Description</label>
+                <label className="text-[11px] font-bold text-gray-700">
+                  Step Description
+                </label>
                 <textarea
                   placeholder="Describe step requirements and value delivered..."
                   value={pathwayEditorDesc}
@@ -2329,27 +2760,40 @@ export default function AdminPanel({
                   </button>
                 </div>
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {((state.careerPathways?.foundation) || []).map((step: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group">
-                      <div className="text-xs font-extrabold text-gray-900 pr-10">{step.title}</div>
-                      <div className="text-[10px] text-gray-500 leading-normal">{step.description}</div>
-                      <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
-                        <button
-                          onClick={() => startEditPathway("foundation", idx, step)}
-                          className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePathwayStep("foundation", idx)}
-                          className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                  {(state.careerPathways?.foundation || []).map(
+                    (step: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group"
+                      >
+                        <div className="text-xs font-extrabold text-gray-900 pr-10">
+                          {step.title}
+                        </div>
+                        <div className="text-[10px] text-gray-500 leading-normal">
+                          {step.description}
+                        </div>
+                        <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
+                          <button
+                            onClick={() =>
+                              startEditPathway("foundation", idx, step)
+                            }
+                            className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeletePathwayStep("foundation", idx)
+                            }
+                            className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {((state.careerPathways?.foundation) || []).length === 0 && (
+                    ),
+                  )}
+                  {(state.careerPathways?.foundation || []).length === 0 && (
                     <div className="text-center py-6 text-[10px] text-gray-400">
                       No foundation steps. Click (+) to add.
                     </div>
@@ -2372,27 +2816,40 @@ export default function AdminPanel({
                   </button>
                 </div>
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {((state.careerPathways?.trackSplit) || []).map((step: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group">
-                      <div className="text-xs font-extrabold text-gray-900 pr-10">{step.title}</div>
-                      <div className="text-[10px] text-gray-500 leading-normal">{step.description}</div>
-                      <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
-                        <button
-                          onClick={() => startEditPathway("trackSplit", idx, step)}
-                          className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePathwayStep("trackSplit", idx)}
-                          className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                  {(state.careerPathways?.trackSplit || []).map(
+                    (step: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group"
+                      >
+                        <div className="text-xs font-extrabold text-gray-900 pr-10">
+                          {step.title}
+                        </div>
+                        <div className="text-[10px] text-gray-500 leading-normal">
+                          {step.description}
+                        </div>
+                        <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
+                          <button
+                            onClick={() =>
+                              startEditPathway("trackSplit", idx, step)
+                            }
+                            className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeletePathwayStep("trackSplit", idx)
+                            }
+                            className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {((state.careerPathways?.trackSplit) || []).length === 0 && (
+                    ),
+                  )}
+                  {(state.careerPathways?.trackSplit || []).length === 0 && (
                     <div className="text-center py-6 text-[10px] text-gray-400">
                       No technical steps. Click (+) to add.
                     </div>
@@ -2415,27 +2872,40 @@ export default function AdminPanel({
                   </button>
                 </div>
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {((state.careerPathways?.lateralRoles) || []).map((step: any, idx: number) => (
-                    <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group">
-                      <div className="text-xs font-extrabold text-gray-900 pr-10">{step.title}</div>
-                      <div className="text-[10px] text-gray-500 leading-normal">{step.description}</div>
-                      <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
-                        <button
-                          onClick={() => startEditPathway("lateralRoles", idx, step)}
-                          className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => handleDeletePathwayStep("lateralRoles", idx)}
-                          className="p-1 hover:bg-rose-50 text-rose-600 rounded"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                  {(state.careerPathways?.lateralRoles || []).map(
+                    (step: any, idx: number) => (
+                      <div
+                        key={idx}
+                        className="bg-gray-50 p-3 rounded-lg border border-gray-200 space-y-1 relative group"
+                      >
+                        <div className="text-xs font-extrabold text-gray-900 pr-10">
+                          {step.title}
+                        </div>
+                        <div className="text-[10px] text-gray-500 leading-normal">
+                          {step.description}
+                        </div>
+                        <div className="absolute right-2 top-2 hidden group-hover:flex items-center gap-0.5 bg-white rounded-md border border-gray-200 shadow-sm p-0.5">
+                          <button
+                            onClick={() =>
+                              startEditPathway("lateralRoles", idx, step)
+                            }
+                            className="p-1 hover:bg-gray-100 text-[#4B5E40] rounded"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              handleDeletePathwayStep("lateralRoles", idx)
+                            }
+                            className="p-1 hover:bg-rose-50 text-rose-600 rounded"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {((state.careerPathways?.lateralRoles) || []).length === 0 && (
+                    ),
+                  )}
+                  {(state.careerPathways?.lateralRoles || []).length === 0 && (
                     <div className="text-center py-6 text-[10px] text-gray-400">
                       No lateral/other roles steps. Click (+) to add.
                     </div>
@@ -2543,7 +3013,10 @@ export default function AdminPanel({
                               const targetOwner =
                                 selectedOwners[service.id] || "";
                               try {
-                                await assignMicroserviceOwner(service.id, targetOwner);
+                                await assignMicroserviceOwner(
+                                  service.id,
+                                  targetOwner,
+                                );
 
                                 triggerSuccess(
                                   `Assigned owner to "${service.name}" successfully!`,
@@ -2606,7 +3079,9 @@ export default function AdminPanel({
               })
               .map((p) => {
                 const selectedLevel =
-                  selectedUserLevels[p.id] || p.learningLevel || "Apprentice level 1";
+                  selectedUserLevels[p.id] ||
+                  p.learningLevel ||
+                  "Apprentice level 1";
                 return (
                   <div
                     key={p.id}
@@ -2666,6 +3141,16 @@ export default function AdminPanel({
       {/* 3. KD ALIGNMENT ASSIGNMENT DESK */}
       {adminTab === "kd_desk" && (
         <div className="space-y-6 animate-fade-in" id="kd-desk-tab-root">
+          <KnowledgeDevelopmentInfoView
+            profile={adminProfile}
+            kdInfo={state.kdInfo}
+            presentations={state.kdPresentations}
+            meetings={state.meetings}
+            attendance={state.attendance}
+            microserviceOwners={state.microserviceOwners}
+            profiles={state.profiles}
+            onStateUpdate={onStateUpdate}
+          />
           <div className="bg-white p-5 rounded-xl border border-gray-150">
             <h3 className="font-extrabold text-sm text-gray-950 flex items-center gap-1.5 animate-fade-in">
               <BookOpen className="w-4 h-4 text-[#4B5E40]" /> KD Alignment
@@ -3324,7 +3809,9 @@ export default function AdminPanel({
                 )}
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
-                Review newly registered users awaiting validation, verify onboarding submissions and assessment results, and clear candidates for placement.
+                Review newly registered users awaiting validation, verify
+                onboarding submissions and assessment results, and clear
+                candidates for placement.
               </p>
             </div>
           </div>
@@ -3433,13 +3920,25 @@ export default function AdminPanel({
                 onChange={(e) => setReviewStatusFilter(e.target.value)}
                 className="w-full p-1.5 text-xs bg-white rounded-lg border border-gray-200 outline-none focus:border-[#4B5E40] cursor-pointer font-semibold text-gray-750"
               >
-                <option value="pending_validation">⌛ Newly Registered / Awaiting Validation</option>
+                <option value="pending_validation">
+                  ⌛ Newly Registered / Awaiting Validation
+                </option>
                 <option value="all">👥 All Candidate States</option>
-                <option value="onboarding">Stage 1: Onboarding / Profiling</option>
-                <option value="assessment_passed">Stage 2: Passed (Unlock Orientation)</option>
-                <option value="assessment_failed">Stage 2: Failed (Requires Pivot)</option>
-                <option value="oriented">Stage 3: Oriented (Ready for Active)</option>
-                <option value="dashboard">Stage 4: Active in Workspace Dashboard</option>
+                <option value="onboarding">
+                  Stage 1: Onboarding / Profiling
+                </option>
+                <option value="assessment_passed">
+                  Stage 2: Passed (Unlock Orientation)
+                </option>
+                <option value="assessment_failed">
+                  Stage 2: Failed (Requires Pivot)
+                </option>
+                <option value="oriented">
+                  Stage 3: Oriented (Ready for Active)
+                </option>
+                <option value="dashboard">
+                  Stage 4: Active in Workspace Dashboard
+                </option>
               </select>
             </div>
 
@@ -3465,29 +3964,45 @@ export default function AdminPanel({
 
           {filteredUsersForReviews.length === 0 ? (
             <div className="py-12 text-center text-gray-400 text-xs font-semibold bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-              No registered students match your current filter or search criteria.
+              No registered students match your current filter or search
+              criteria.
             </div>
           ) : (
             <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
               {filteredUsersForReviews.map((student) => {
-                const isPending = ["onboarding", "assessment_failed", "assessment_passed", "oriented"].includes(student.status);
+                const isPending = [
+                  "onboarding",
+                  "assessment_failed",
+                  "assessment_passed",
+                  "oriented",
+                ].includes(student.status);
                 const isExpanded = expandedReviewStudentId === student.id;
 
                 // Get onboarding submissions for this student
-                const studentOnboardingSubs = (state.onboardingSubmissions || []).filter(
-                  (sub: any) => sub.userId === student.id || (sub.email && sub.email.toLowerCase() === (student.email || "").toLowerCase())
+                const studentOnboardingSubs = (
+                  state.onboardingSubmissions || []
+                ).filter(
+                  (sub: any) =>
+                    sub.userId === student.id ||
+                    (sub.email &&
+                      sub.email.toLowerCase() ===
+                        (student.email || "").toLowerCase()),
                 );
                 const latestOnboarding = studentOnboardingSubs.sort(
-                  (a: any, b: any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+                  (a: any, b: any) =>
+                    new Date(b.timestamp || 0).getTime() -
+                    new Date(a.timestamp || 0).getTime(),
                 )[0];
 
                 // Get assessment attempts for this student
                 const studentAttempts = (state.assessmentAttempts || []).filter(
-                  (a: any) => a.userId === student.id
+                  (a: any) => a.userId === student.id,
                 );
                 const latestAttempt = studentAttempts
                   .slice()
-                  .sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))[0];
+                  .sort((a: any, b: any) =>
+                    b.timestamp.localeCompare(a.timestamp),
+                  )[0];
 
                 return (
                   <div
@@ -3513,23 +4028,31 @@ export default function AdminPanel({
                           )}
                         </div>
                         <div className="text-[10.5px] text-gray-500 font-mono mt-1">
-                          Email: <span className="font-semibold text-gray-700">{student.email}</span> | Registered:{" "}
-                          <span className="font-semibold text-gray-700">{new Date(student.joinedAt).toLocaleDateString()}</span>
+                          Email:{" "}
+                          <span className="font-semibold text-gray-700">
+                            {student.email}
+                          </span>{" "}
+                          | Registered:{" "}
+                          <span className="font-semibold text-gray-700">
+                            {new Date(student.joinedAt).toLocaleDateString()}
+                          </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 self-start sm:self-auto">
-                        <span className={`px-2.5 py-0.5 rounded-full font-mono font-bold text-[9px] uppercase tracking-wider border ${
-                          student.status === "onboarding"
-                            ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                            : student.status === "assessment_passed"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : student.status === "assessment_failed"
-                            ? "bg-rose-50 text-rose-700 border-rose-200"
-                            : student.status === "oriented"
-                            ? "bg-purple-50 text-purple-700 border-purple-200"
-                            : "bg-slate-100 text-slate-700 border-slate-200"
-                        }`}>
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full font-mono font-bold text-[9px] uppercase tracking-wider border ${
+                            student.status === "onboarding"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                              : student.status === "assessment_passed"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : student.status === "assessment_failed"
+                                  ? "bg-rose-50 text-rose-700 border-rose-200"
+                                  : student.status === "oriented"
+                                    ? "bg-purple-50 text-purple-700 border-purple-200"
+                                    : "bg-slate-100 text-slate-700 border-slate-200"
+                          }`}
+                        >
                           {student.status.replace("_", " ")}
                         </span>
                       </div>
@@ -3572,26 +4095,42 @@ export default function AdminPanel({
                           ASSESSMENT SCORE
                         </span>
                         <div className="flex items-baseline gap-1.5 mt-0.5">
-                          <span className={`font-black text-sm ${
-                            student.score === undefined
-                              ? "text-gray-400"
-                              : student.score >= 50
-                              ? "text-emerald-600"
-                              : "text-rose-600"
-                          }`}>
-                            {student.score !== undefined ? `${student.score}%` : "Not Taken"}
+                          <span
+                            className={`font-black text-sm ${
+                              student.score === undefined
+                                ? "text-gray-400"
+                                : student.score >= 50
+                                  ? "text-emerald-600"
+                                  : "text-rose-600"
+                            }`}
+                          >
+                            {student.score !== undefined
+                              ? `${student.score}%`
+                              : "Not Taken"}
                           </span>
                           {studentAttempts.length > 0 && (
                             <span className="text-[9px] font-bold text-gray-400 bg-gray-100 px-1.5 py-0.2 rounded font-mono">
-                              {studentAttempts.length} {studentAttempts.length === 1 ? 'attempt' : 'attempts'}
+                              {studentAttempts.length}{" "}
+                              {studentAttempts.length === 1
+                                ? "attempt"
+                                : "attempts"}
                             </span>
                           )}
                         </div>
-                        {latestAttempt && latestAttempt.technicalScore !== undefined && latestAttempt.softSkillsScore !== undefined && (
-                          <span className="block text-[9.5px] text-gray-500 font-mono mt-0.5">
-                            Tech: <strong className="text-gray-700">{latestAttempt.technicalScore}%</strong> | Soft: <strong className="text-gray-700">{latestAttempt.softSkillsScore}%</strong>
-                          </span>
-                        )}
+                        {latestAttempt &&
+                          latestAttempt.technicalScore !== undefined &&
+                          latestAttempt.softSkillsScore !== undefined && (
+                            <span className="block text-[9.5px] text-gray-500 font-mono mt-0.5">
+                              Tech:{" "}
+                              <strong className="text-gray-700">
+                                {latestAttempt.technicalScore}%
+                              </strong>{" "}
+                              | Soft:{" "}
+                              <strong className="text-gray-700">
+                                {latestAttempt.softSkillsScore}%
+                              </strong>
+                            </span>
+                          )}
                       </div>
 
                       <div>
@@ -3604,7 +4143,10 @@ export default function AdminPanel({
                           </span>
                         </div>
                         <span className="text-[10px] text-gray-500 block mt-1 font-mono">
-                          Tasks Assigned: <strong className="text-gray-700">{student.assignedTasks?.length || 0}</strong>
+                          Tasks Assigned:{" "}
+                          <strong className="text-gray-700">
+                            {student.assignedTasks?.length || 0}
+                          </strong>
                         </span>
                       </div>
                     </div>
@@ -3613,16 +4155,28 @@ export default function AdminPanel({
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-white/80 p-2 px-3 rounded-lg border border-gray-200">
                       <button
                         type="button"
-                        onClick={() => setExpandedReviewStudentId(isExpanded ? null : student.id)}
+                        onClick={() =>
+                          setExpandedReviewStudentId(
+                            isExpanded ? null : student.id,
+                          )
+                        }
                         className="text-xs font-bold text-[#4B5E40] hover:text-[#3d4d34] flex items-center gap-1.5 cursor-pointer text-left"
                       >
                         <span>📋</span>
-                        <span>{isExpanded ? "Hide Onboarding Answers & Assessment Breakdown" : "Review Onboarding Answers & Assessment Breakdown"}</span>
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`} />
+                        <span>
+                          {isExpanded
+                            ? "Hide Onboarding Answers & Assessment Breakdown"
+                            : "Review Onboarding Answers & Assessment Breakdown"}
+                        </span>
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                        />
                       </button>
 
                       <span className="text-[10px] text-gray-400 font-mono">
-                        {latestOnboarding ? `Submitted Onboarding: ${new Date(latestOnboarding.timestamp).toLocaleDateString()}` : "Form: Initial Profiling"}
+                        {latestOnboarding
+                          ? `Submitted Onboarding: ${new Date(latestOnboarding.timestamp).toLocaleDateString()}`
+                          : "Form: Initial Profiling"}
                       </span>
                     </div>
 
@@ -3630,51 +4184,91 @@ export default function AdminPanel({
                     {isExpanded && (
                       <div className="animate-fade-in bg-white p-4 rounded-xl border border-gray-200 space-y-3 shadow-xs">
                         <h5 className="font-black text-xs text-gray-800 uppercase tracking-wider border-b pb-1.5 flex items-center justify-between">
-                          <span>Onboarding Profile & Assessment Audit Sheet</span>
-                          <span className="text-[10px] font-normal text-gray-400">Candidate ID: {student.id}</span>
+                          <span>
+                            Onboarding Profile & Assessment Audit Sheet
+                          </span>
+                          <span className="text-[10px] font-normal text-gray-400">
+                            Candidate ID: {student.id}
+                          </span>
                         </h5>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                           <div className="bg-gray-50 p-3 rounded-lg border border-gray-150 space-y-1.5">
-                            <span className="block text-[10px] font-black text-gray-500 uppercase">Track Motivation & Background</span>
+                            <span className="block text-[10px] font-black text-gray-500 uppercase">
+                              Track Motivation & Background
+                            </span>
                             <p className="text-gray-700 leading-snug">
-                              <strong>Education Background:</strong> {student.education || latestOnboarding?.education || "N/A"}
+                              <strong>Education Background:</strong>{" "}
+                              {student.education ||
+                                latestOnboarding?.education ||
+                                "N/A"}
                             </p>
                             <p className="text-gray-700 leading-snug">
-                              <strong>Current Occupation:</strong> {student.occupation || latestOnboarding?.occupation || "N/A"}
+                              <strong>Current Occupation:</strong>{" "}
+                              {student.occupation ||
+                                latestOnboarding?.occupation ||
+                                "N/A"}
                             </p>
                             <p className="text-gray-700 leading-snug">
-                              <strong>Tech Stack Experience:</strong> {student.techExperience || latestOnboarding?.techExperience || "N/A"}
+                              <strong>Tech Stack Experience:</strong>{" "}
+                              {student.techExperience ||
+                                latestOnboarding?.techExperience ||
+                                "N/A"}
                             </p>
                             {latestOnboarding?.courseCompleted && (
                               <p className="text-gray-700 leading-snug">
-                                <strong>Previous Course Completed:</strong> {latestOnboarding.courseCompleted}
+                                <strong>Previous Course Completed:</strong>{" "}
+                                {latestOnboarding.courseCompleted}
                               </p>
                             )}
                           </div>
 
                           <div className="bg-gray-50 p-3 rounded-lg border border-gray-150 space-y-1.5">
-                            <span className="block text-[10px] font-black text-gray-500 uppercase">Assessment Attempts Trail</span>
+                            <span className="block text-[10px] font-black text-gray-500 uppercase">
+                              Assessment Attempts Trail
+                            </span>
                             {studentAttempts.length === 0 ? (
-                              <p className="text-gray-400 italic text-[11px]">No assessment attempts recorded yet for this user.</p>
+                              <p className="text-gray-400 italic text-[11px]">
+                                No assessment attempts recorded yet for this
+                                user.
+                              </p>
                             ) : (
                               <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
                                 {studentAttempts
                                   .slice()
-                                  .sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp))
+                                  .sort((a: any, b: any) =>
+                                    b.timestamp.localeCompare(a.timestamp),
+                                  )
                                   .map((att: any) => (
-                                    <div key={att.id} className="p-2 bg-white rounded border border-gray-200 text-[11px] flex justify-between items-center">
+                                    <div
+                                      key={att.id}
+                                      className="p-2 bg-white rounded border border-gray-200 text-[11px] flex justify-between items-center"
+                                    >
                                       <div>
-                                        <div className="font-bold text-gray-800">{att.track ? getCleanTrackName(att.track) : "Track Assessment"}</div>
-                                        <div className="text-[9.5px] text-gray-400 font-mono">{new Date(att.timestamp).toLocaleString()}</div>
+                                        <div className="font-bold text-gray-800">
+                                          {att.track
+                                            ? getCleanTrackName(att.track)
+                                            : "Track Assessment"}
+                                        </div>
+                                        <div className="text-[9.5px] text-gray-400 font-mono">
+                                          {new Date(
+                                            att.timestamp,
+                                          ).toLocaleString()}
+                                        </div>
                                       </div>
                                       <div className="text-right">
-                                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${att.score >= 50 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-full font-black text-[10px] ${att.score >= 50 ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}
+                                        >
                                           {att.score}%
                                         </span>
-                                        {att.technicalScore !== undefined && att.softSkillsScore !== undefined && (
-                                          <div className="text-[9px] text-gray-400 font-mono mt-0.5">T: {att.technicalScore}% | S: {att.softSkillsScore}%</div>
-                                        )}
+                                        {att.technicalScore !== undefined &&
+                                          att.softSkillsScore !== undefined && (
+                                            <div className="text-[9px] text-gray-400 font-mono mt-0.5">
+                                              T: {att.technicalScore}% | S:{" "}
+                                              {att.softSkillsScore}%
+                                            </div>
+                                          )}
                                       </div>
                                     </div>
                                   ))}
@@ -3691,26 +4285,64 @@ export default function AdminPanel({
                               <span>Mentor Placement Alignment Analysis</span>
                             </span>
                             <span className="text-[10px] font-bold text-gray-500">
-                              Selected Track: <strong className="text-[#4B5E40]">{getCleanTrackName(student.track)}</strong>
+                              Selected Track:{" "}
+                              <strong className="text-[#4B5E40]">
+                                {getCleanTrackName(student.track)}
+                              </strong>
                             </span>
                           </div>
 
                           <div className="text-xs text-gray-700 leading-relaxed font-medium">
                             {student.score === undefined ? (
                               <p className="text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 text-[11px]">
-                                ⚠️ <strong>Assessment Pending:</strong> Learner has not taken the entry assessment for <strong>{getCleanTrackName(student.track)}</strong>. Placement clearance requires test completion.
+                                ⚠️ <strong>Assessment Pending:</strong> Learner
+                                has not taken the entry assessment for{" "}
+                                <strong>
+                                  {getCleanTrackName(student.track)}
+                                </strong>
+                                . Placement clearance requires test completion.
                               </p>
                             ) : student.score >= 70 ? (
                               <p className="text-emerald-900 bg-emerald-50 p-2 rounded-lg border border-emerald-200 text-[11px]">
-                                ✅ <strong>Optimal Track Match ({student.score}%):</strong> Excellent technical and soft skill score alignment for the <strong>{getCleanTrackName(student.track)}</strong> track. Recommended for immediate orientation clearance.
+                                ✅{" "}
+                                <strong>
+                                  Optimal Track Match ({student.score}%):
+                                </strong>{" "}
+                                Excellent technical and soft skill score
+                                alignment for the{" "}
+                                <strong>
+                                  {getCleanTrackName(student.track)}
+                                </strong>{" "}
+                                track. Recommended for immediate orientation
+                                clearance.
                               </p>
                             ) : student.score >= 50 ? (
                               <p className="text-blue-900 bg-blue-50 p-2 rounded-lg border border-blue-200 text-[11px]">
-                                ℹ️ <strong>Passable Track Match ({student.score}%):</strong> Candidate passed the baseline cutoff (50%) for <strong>{getCleanTrackName(student.track)}</strong>. Additional foundation tasks may be assigned upon orientation.
+                                ℹ️{" "}
+                                <strong>
+                                  Passable Track Match ({student.score}%):
+                                </strong>{" "}
+                                Candidate passed the baseline cutoff (50%) for{" "}
+                                <strong>
+                                  {getCleanTrackName(student.track)}
+                                </strong>
+                                . Additional foundation tasks may be assigned
+                                upon orientation.
                               </p>
                             ) : (
                               <p className="text-rose-900 bg-rose-50 p-2 rounded-lg border border-rose-200 text-[11px]">
-                                🚨 <strong>Placement Gap ({student.score}%):</strong> Score is below the 50% pass mark for <strong>{getCleanTrackName(student.track)}</strong>. Review background answers above and consider using the <em>"Pivot Onboarding Track"</em> control to reassign candidate to a foundation track.
+                                🚨{" "}
+                                <strong>
+                                  Placement Gap ({student.score}%):
+                                </strong>{" "}
+                                Score is below the 50% pass mark for{" "}
+                                <strong>
+                                  {getCleanTrackName(student.track)}
+                                </strong>
+                                . Review background answers above and consider
+                                using the <em>"Pivot Onboarding Track"</em>{" "}
+                                control to reassign candidate to a foundation
+                                track.
                               </p>
                             )}
                           </div>
@@ -3723,10 +4355,17 @@ export default function AdminPanel({
                       <div className="bg-emerald-50/90 border border-emerald-200 p-2.5 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-emerald-900 shadow-2xs font-sans">
                         <div className="flex items-center gap-2 font-bold">
                           <span className="text-emerald-600">🛡️</span>
-                          <span>Placement & Onboarding Confirmed by <strong className="text-emerald-950">{student.validatedBy || "Mentor/Admin"}</strong></span>
+                          <span>
+                            Placement & Onboarding Confirmed by{" "}
+                            <strong className="text-emerald-950">
+                              {student.validatedBy || "Mentor/Admin"}
+                            </strong>
+                          </span>
                         </div>
                         <div className="text-[10px] font-mono font-semibold text-emerald-800 bg-emerald-100/70 px-2 py-0.5 rounded-md self-start sm:self-auto border border-emerald-200">
-                          {student.validatedAt ? new Date(student.validatedAt).toLocaleString() : "Confirmed"}
+                          {student.validatedAt
+                            ? new Date(student.validatedAt).toLocaleString()
+                            : "Confirmed"}
                         </div>
                       </div>
                     )}
@@ -3739,14 +4378,20 @@ export default function AdminPanel({
                             <span>🔒</span> DASHBOARD ACCESS LOCKED
                           </span>
                           <span className="text-[10px] font-mono text-rose-600 bg-rose-100 px-2 py-0.5 rounded border border-rose-200">
-                            {student.lockedAt ? new Date(student.lockedAt).toLocaleString() : "Recently"}
+                            {student.lockedAt
+                              ? new Date(student.lockedAt).toLocaleString()
+                              : "Recently"}
                           </span>
                         </div>
                         <p className="text-rose-950 font-bold bg-white/90 p-2 rounded-lg border border-rose-200">
-                          Lock Reason: "{student.lockReason || "Wrong knowledge track or validation failed."}"
+                          Lock Reason: "
+                          {student.lockReason ||
+                            "Wrong knowledge track or validation failed."}
+                          "
                         </p>
                         <div className="text-[10.5px] text-rose-800 font-mono">
-                          Locked by: <strong>{student.lockedBy || "Tech Mentor"}</strong>
+                          Locked by:{" "}
+                          <strong>{student.lockedBy || "Tech Mentor"}</strong>
                         </div>
                       </div>
                     )}
@@ -3754,10 +4399,14 @@ export default function AdminPanel({
                     {/* Actions Row */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-100">
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-gray-500 font-bold">Set Learning Level:</span>
+                        <span className="text-[10px] text-gray-500 font-bold">
+                          Set Learning Level:
+                        </span>
                         <select
                           value={student.learningLevel || "Apprentice level 1"}
-                          onChange={(e) => handleChangeLevel(student.id, e.target.value)}
+                          onChange={(e) =>
+                            handleChangeLevel(student.id, e.target.value)
+                          }
                           className="bg-white border border-gray-200 text-[11px] rounded-lg px-2 py-1 outline-none text-gray-800 font-semibold cursor-pointer"
                         >
                           {LEVELS_OPTIONS.map((lvl) => (
@@ -3791,14 +4440,22 @@ export default function AdminPanel({
                             }}
                             className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px] rounded-lg cursor-pointer flex items-center gap-1"
                           >
-                            <span>🔒</span> {lockingStudentId === student.id ? "Cancel Lock" : "Lock Dashboard"}
+                            <span>🔒</span>{" "}
+                            {lockingStudentId === student.id
+                              ? "Cancel Lock"
+                              : "Lock Dashboard"}
                           </button>
                         )}
 
                         {student.status === "assessment_passed" && (
                           <button
                             id={`auth-approve-btn-${student.id}`}
-                            onClick={() => handleStudentAction(student.id, "Approve-Orientation")}
+                            onClick={() =>
+                              handleStudentAction(
+                                student.id,
+                                "Approve-Orientation",
+                              )
+                            }
                             className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-2xs flex items-center gap-1"
                           >
                             <span>✅</span> Validate & Unlock Orientation
@@ -3808,7 +4465,12 @@ export default function AdminPanel({
                         {student.status === "oriented" && (
                           <button
                             id={`auth-promote-btn-${student.id}`}
-                            onClick={() => handleStudentAction(student.id, "Promote-Dashboard")}
+                            onClick={() =>
+                              handleStudentAction(
+                                student.id,
+                                "Promote-Dashboard",
+                              )
+                            }
                             className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-2xs flex items-center gap-1"
                           >
                             <span>🚀</span> Validate & Promote to Workspace
@@ -3818,7 +4480,9 @@ export default function AdminPanel({
                         {student.status === "dashboard" && (
                           <button
                             id={`auth-confirm-dashboard-btn-${student.id}`}
-                            onClick={() => handleStudentAction(student.id, "Confirm-Active")}
+                            onClick={() =>
+                              handleStudentAction(student.id, "Confirm-Active")
+                            }
                             className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-2xs flex items-center gap-1"
                           >
                             <span>✅</span> Confirm Placement & Keep Active
@@ -3828,7 +4492,9 @@ export default function AdminPanel({
                         {student.status === "assessment_failed" && (
                           <button
                             id={`auth-reset-btn-${student.id}`}
-                            onClick={() => handleStudentAction(student.id, "Pivot-Track")}
+                            onClick={() =>
+                              handleStudentAction(student.id, "Pivot-Track")
+                            }
                             className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold text-[11px] rounded-lg cursor-pointer flex items-center gap-1"
                           >
                             <span>🔀</span> Pivot Onboarding Track
@@ -3838,7 +4504,12 @@ export default function AdminPanel({
                         {student.status === "onboarding" && (
                           <button
                             id={`auth-approve-onboarding-btn-${student.id}`}
-                            onClick={() => handleStudentAction(student.id, "Approve-Orientation")}
+                            onClick={() =>
+                              handleStudentAction(
+                                student.id,
+                                "Approve-Orientation",
+                              )
+                            }
                             className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] rounded-lg cursor-pointer shadow-2xs flex items-center gap-1"
                           >
                             <span>✅</span> Validate Onboarding Profile
@@ -3847,7 +4518,9 @@ export default function AdminPanel({
 
                         <button
                           id={`auth-onboard-btn-${student.id}`}
-                          onClick={() => handleStudentAction(student.id, "Set-Onboarding")}
+                          onClick={() =>
+                            handleStudentAction(student.id, "Set-Onboarding")
+                          }
                           disabled={student.status === "onboarding"}
                           className="px-3 py-1.5 border border-gray-200 text-gray-600 hover:bg-gray-150 rounded-lg text-[11px] disabled:opacity-40 shrink-0 cursor-pointer"
                         >
@@ -3867,9 +4540,14 @@ export default function AdminPanel({
                             Reason Required *
                           </span>
                         </div>
-                        
+
                         <p className="text-xs text-rose-900 leading-tight">
-                          Locking immediately restricts <strong>{student.fullName || student.username}</strong>'s access to workspace features until they correct their onboarding details or knowledge track placement.
+                          Locking immediately restricts{" "}
+                          <strong>
+                            {student.fullName || student.username}
+                          </strong>
+                          's access to workspace features until they correct
+                          their onboarding details or knowledge track placement.
                         </p>
 
                         <div className="space-y-1">
@@ -3886,7 +4564,9 @@ export default function AdminPanel({
 
                         {/* Quick Presets */}
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-bold text-gray-500">Quick Presets:</span>
+                          <span className="text-[10px] font-bold text-gray-500">
+                            Quick Presets:
+                          </span>
                           {[
                             "Placed in wrong knowledge track",
                             "Failed onboarding track validation",
@@ -3971,7 +4651,7 @@ export default function AdminPanel({
                   setMeetingDescription("");
                   setMeetingAssignedUsers([]);
                   setUserSearchText("");
-                  
+
                   // Reset recurrence states
                   setIsRecurring(false);
                   setRecurrenceFrequency("one-time");
@@ -4078,10 +4758,14 @@ export default function AdminPanel({
                       {(() => {
                         const set = new Set<string>();
                         (state.profiles || []).forEach((p: any) => {
-                          const isAdm = p.role === "admin" ||
-                            String(p.learningLevel || "").toLowerCase() === "admin" ||
-                            String(p.learningLevel || "").toLowerCase() === "mentor" ||
-                            String(p.learningLevel || "").toLowerCase() === "administrative mentor";
+                          const isAdm =
+                            p.role === "admin" ||
+                            String(p.learningLevel || "").toLowerCase() ===
+                              "admin" ||
+                            String(p.learningLevel || "").toLowerCase() ===
+                              "mentor" ||
+                            String(p.learningLevel || "").toLowerCase() ===
+                              "administrative mentor";
                           const name = String(p.fullName || "").trim();
                           if (isAdm && name) {
                             set.add(name);
@@ -4114,14 +4798,18 @@ export default function AdminPanel({
 
                 {/* Recurrence Setup Section (NEW Meetings Only) */}
                 {!editingMeetingId && (
-                  <div className="bg-white p-4 rounded-xl border border-gray-200 space-y-3.5 animate-fade-in" id="recurrence-setup-section">
+                  <div
+                    className="bg-white p-4 rounded-xl border border-gray-200 space-y-3.5 animate-fade-in"
+                    id="recurrence-setup-section"
+                  >
                     <div className="flex items-center justify-between">
                       <div>
                         <h5 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-700">
                           🔄 Recurring Meeting Series Settings
                         </h5>
                         <p className="text-[10px] text-gray-400 font-medium">
-                          Configure this meeting to repeat automatically over a period of time
+                          Configure this meeting to repeat automatically over a
+                          period of time
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -4130,11 +4818,17 @@ export default function AdminPanel({
                           id="is-recurring-toggle"
                           checked={isRecurring}
                           onChange={(e) => {
-                            setIsRecurring(e.target.checked);
-                            if (e.target.checked) {
+                            const checked = e.target.checked;
+                            setIsRecurring(checked);
+                            if (checked) {
                               // Auto set a start date if empty
                               if (!recurrenceStartDate) {
-                                setRecurrenceStartDate(getLagosDateString(new Date()));
+                                setRecurrenceStartDate(
+                                  meetingDates[0] || getLagosDateString(new Date()),
+                                );
+                              }
+                              if (!recurrenceFrequency || recurrenceFrequency === "one-time") {
+                                setRecurrenceFrequency("daily");
                               }
                             }
                           }}
@@ -4157,7 +4851,9 @@ export default function AdminPanel({
                           </label>
                           <select
                             value={recurrenceFrequency}
-                            onChange={(e) => setRecurrenceFrequency(e.target.value)}
+                            onChange={(e) =>
+                              setRecurrenceFrequency(e.target.value)
+                            }
                             className="w-full bg-white border border-gray-250 rounded-lg px-2.5 py-1.5 outline-none focus:border-[#4B5E40] text-xs font-semibold cursor-pointer"
                           >
                             <option value="daily">Daily</option>
@@ -4177,7 +4873,11 @@ export default function AdminPanel({
                               type="number"
                               min="1"
                               value={recurrenceCustomInterval}
-                              onChange={(e) => setRecurrenceCustomInterval(parseInt(e.target.value) || 1)}
+                              onChange={(e) =>
+                                setRecurrenceCustomInterval(
+                                  parseInt(e.target.value) || 1,
+                                )
+                              }
                               className="w-full bg-white border border-gray-250 rounded-lg px-2.5 py-1.5 outline-none focus:border-[#4B5E40] text-xs font-semibold"
                             />
                           </div>
@@ -4193,7 +4893,10 @@ export default function AdminPanel({
                             onChange={(e) => {
                               setRecurrenceStartDate(e.target.value);
                               // Sync meetingDates list automatically with the start date as the first date!
-                              if (e.target.value && !meetingDates.includes(e.target.value)) {
+                              if (
+                                e.target.value &&
+                                !meetingDates.includes(e.target.value)
+                              ) {
                                 setMeetingDates([e.target.value]);
                               }
                             }}
@@ -4215,7 +4918,11 @@ export default function AdminPanel({
                                 const d = (() => {
                                   if (!recurrenceStartDate) return new Date();
                                   const parts = recurrenceStartDate.split("-");
-                                  return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+                                  return new Date(
+                                    parseInt(parts[0], 10),
+                                    parseInt(parts[1], 10) - 1,
+                                    parseInt(parts[2], 10),
+                                  );
                                 })();
                                 d.setDate(d.getDate() + 30);
                                 setRecurrenceEndDate(getLagosDateString(d));
@@ -4223,7 +4930,9 @@ export default function AdminPanel({
                             }}
                             className="w-full bg-white border border-gray-250 rounded-lg px-2.5 py-1.5 outline-none focus:border-[#4B5E40] text-xs font-semibold cursor-pointer"
                           >
-                            <option value="none">No End Date (Auto 90 days)</option>
+                            <option value="none">
+                              No End Date (Auto 90 days)
+                            </option>
                             <option value="specify">Specify End Date</option>
                           </select>
                         </div>
@@ -4236,7 +4945,9 @@ export default function AdminPanel({
                             <input
                               type="date"
                               value={recurrenceEndDate}
-                              onChange={(e) => setRecurrenceEndDate(e.target.value)}
+                              onChange={(e) =>
+                                setRecurrenceEndDate(e.target.value)
+                              }
                               className="w-full bg-white border border-gray-250 rounded-lg px-2.5 py-1.5 outline-none focus:border-[#4B5E40] text-xs font-semibold cursor-pointer"
                             />
                           </div>
@@ -4247,69 +4958,82 @@ export default function AdminPanel({
                 )}
 
                 {/* Recurrence Edit Options Section (EXISTING Meetings Only) */}
-                {editingMeetingId && (() => {
-                  const currentEditingMeeting = state.meetings.find((m: any) => m.id === editingMeetingId);
-                  if (!currentEditingMeeting?.seriesId) return null;
-                  return (
-                    <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/60 space-y-3 animate-fade-in" id="recurrence-edit-section">
-                      <div>
-                        <h5 className="font-extrabold text-[11px] uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-                          🔄 Recurring Series Modification
-                        </h5>
-                        <p className="text-[10px] text-amber-700/80 font-semibold">
-                          This occurrence is part of a recurring series. How should your changes be applied when saved?
-                        </p>
+                {editingMeetingId &&
+                  (() => {
+                    const currentEditingMeeting = state.meetings.find(
+                      (m: any) => m.id === editingMeetingId,
+                    );
+                    if (!currentEditingMeeting?.seriesId) return null;
+                    return (
+                      <div
+                        className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/60 space-y-3 animate-fade-in"
+                        id="recurrence-edit-section"
+                      >
+                        <div>
+                          <h5 className="font-extrabold text-[11px] uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                            🔄 Recurring Series Modification
+                          </h5>
+                          <p className="text-[10px] text-amber-700/80 font-semibold">
+                            This occurrence is part of a recurring series. How
+                            should your changes be applied when saved?
+                          </p>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-3 text-xs font-bold text-gray-700">
+                          <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
+                            <input
+                              type="radio"
+                              name="recurrence-edit-mode"
+                              value="single"
+                              checked={recurrenceEditMode === "single"}
+                              onChange={() => setRecurrenceEditMode("single")}
+                              className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
+                            />
+                            <div className="flex flex-col">
+                              <span>This occurrence only</span>
+                              <span className="text-[9.5px] text-gray-400 font-normal">
+                                Change only this specific meeting record
+                              </span>
+                            </div>
+                          </label>
+
+                          <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
+                            <input
+                              type="radio"
+                              name="recurrence-edit-mode"
+                              value="future"
+                              checked={recurrenceEditMode === "future"}
+                              onChange={() => setRecurrenceEditMode("future")}
+                              className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
+                            />
+                            <div className="flex flex-col">
+                              <span>This and future occurrences</span>
+                              <span className="text-[9.5px] text-gray-400 font-normal">
+                                Apply changes to subsequent meetings
+                              </span>
+                            </div>
+                          </label>
+
+                          <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
+                            <input
+                              type="radio"
+                              name="recurrence-edit-mode"
+                              value="all"
+                              checked={recurrenceEditMode === "all"}
+                              onChange={() => setRecurrenceEditMode("all")}
+                              className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
+                            />
+                            <div className="flex flex-col">
+                              <span>The entire meeting series</span>
+                              <span className="text-[9.5px] text-gray-400 font-normal">
+                                Apply changes to all occurrences in series
+                              </span>
+                            </div>
+                          </label>
+                        </div>
                       </div>
-
-                      <div className="flex flex-col sm:flex-row gap-3 text-xs font-bold text-gray-700">
-                        <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
-                          <input
-                            type="radio"
-                            name="recurrence-edit-mode"
-                            value="single"
-                            checked={recurrenceEditMode === "single"}
-                            onChange={() => setRecurrenceEditMode("single")}
-                            className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
-                          />
-                          <div className="flex flex-col">
-                            <span>This occurrence only</span>
-                            <span className="text-[9.5px] text-gray-400 font-normal">Change only this specific meeting record</span>
-                          </div>
-                        </label>
-
-                        <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
-                          <input
-                            type="radio"
-                            name="recurrence-edit-mode"
-                            value="future"
-                            checked={recurrenceEditMode === "future"}
-                            onChange={() => setRecurrenceEditMode("future")}
-                            className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
-                          />
-                          <div className="flex flex-col">
-                            <span>This and future occurrences</span>
-                            <span className="text-[9.5px] text-gray-400 font-normal">Apply changes to subsequent meetings</span>
-                          </div>
-                        </label>
-
-                        <label className="flex items-center gap-2 cursor-pointer bg-white p-2.5 rounded-lg border border-gray-200 flex-1 hover:border-[#4B5E40]/40">
-                          <input
-                            type="radio"
-                            name="recurrence-edit-mode"
-                            value="all"
-                            checked={recurrenceEditMode === "all"}
-                            onChange={() => setRecurrenceEditMode("all")}
-                            className="text-[#4B5E40] focus:ring-[#4B5E40] h-4 w-4 cursor-pointer"
-                          />
-                          <div className="flex flex-col">
-                            <span>The entire meeting series</span>
-                            <span className="text-[9.5px] text-gray-400 font-normal">Apply changes to all occurrences in series</span>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })()}
+                    );
+                  })()}
 
                 {/* Meeting Date Selection Section */}
                 <div
@@ -4354,7 +5078,9 @@ export default function AdminPanel({
                       type="button"
                       onClick={() => {
                         if (!currentPickedDate) {
-                          triggerError("Please choose a valid calendar date first.");
+                          triggerError(
+                            "Please choose a valid calendar date first.",
+                          );
                           return;
                         }
                         if (meetingDates.includes(currentPickedDate)) {
@@ -4363,10 +5089,14 @@ export default function AdminPanel({
                         }
                         const todayStr = getLagosDateString(new Date());
                         if (!allowPastDates && currentPickedDate < todayStr) {
-                          triggerError("Selection of past dates is disabled. Enable past dates below if explicitly required.");
+                          triggerError(
+                            "Selection of past dates is disabled. Enable past dates below if explicitly required.",
+                          );
                           return;
                         }
-                        setMeetingDates((prev) => [...prev, currentPickedDate].sort());
+                        setMeetingDates((prev) =>
+                          [...prev, currentPickedDate].sort(),
+                        );
                         setCurrentPickedDate("");
                       }}
                       className="w-full sm:w-auto sm:self-end px-3 py-1.5 text-xs font-bold text-white bg-[#4B5E40] hover:bg-[#3D4C33] rounded-lg shadow-sm transition cursor-pointer text-center"
@@ -4397,7 +5127,10 @@ export default function AdminPanel({
                       <span className="font-bold text-gray-400 uppercase text-[9px] tracking-wider block">
                         Selected Dates:
                       </span>
-                      <div className="flex flex-wrap gap-1.5" id="selected-meeting-dates-list">
+                      <div
+                        className="flex flex-wrap gap-1.5"
+                        id="selected-meeting-dates-list"
+                      >
                         {meetingDates.map((dateStr) => (
                           <div
                             key={dateStr}
@@ -4407,11 +5140,13 @@ export default function AdminPanel({
                               {(() => {
                                 try {
                                   const d = new Date(dateStr);
-                                  const utcDate = new Date(d.getTime() + d.getTimezoneOffset() * 60000);
+                                  const utcDate = new Date(
+                                    d.getTime() + d.getTimezoneOffset() * 60000,
+                                  );
                                   return utcDate.toLocaleDateString("en-US", {
                                     month: "long",
                                     day: "numeric",
-                                    year: "numeric"
+                                    year: "numeric",
                                   });
                                 } catch (e) {
                                   return dateStr;
@@ -4420,7 +5155,11 @@ export default function AdminPanel({
                             </span>
                             <button
                               type="button"
-                              onClick={() => setMeetingDates((prev) => prev.filter((d) => d !== dateStr))}
+                              onClick={() =>
+                                setMeetingDates((prev) =>
+                                  prev.filter((d) => d !== dateStr),
+                                )
+                              }
                               className="text-rose-600 hover:text-rose-800 font-black cursor-pointer ml-0.5 select-none"
                               title="Remove date"
                             >
@@ -4432,7 +5171,8 @@ export default function AdminPanel({
                     </div>
                   ) : (
                     <div className="mt-1 pt-2 text-rose-600 text-[10px] font-bold animate-pulse flex items-center gap-1">
-                      ⚠️ No date selected! A meeting cannot be created or updated until at least one meeting date is chosen.
+                      ⚠️ No date selected! A meeting cannot be created or
+                      updated until at least one meeting date is chosen.
                     </div>
                   )}
                 </div>
@@ -4479,11 +5219,7 @@ export default function AdminPanel({
                         <div className="space-y-0.5 max-h-48 overflow-y-auto pr-1">
                           {(state.meetingTypes && state.meetingTypes.length > 0
                             ? state.meetingTypes
-                            : [
-                                "Knowledge Track",
-                                "Microservices",
-                                "Project",
-                              ]
+                            : ["Knowledge Track", "Microservices", "Project"]
                           ).filter((type: string) =>
                             type
                               .toLowerCase()
@@ -4495,11 +5231,7 @@ export default function AdminPanel({
                           ) : (
                             (state.meetingTypes && state.meetingTypes.length > 0
                               ? state.meetingTypes
-                              : [
-                                  "Knowledge Track",
-                                  "Microservices",
-                                  "Project",
-                                ]
+                              : ["Knowledge Track", "Microservices", "Project"]
                             )
                               .filter((type: string) =>
                                 type
@@ -5029,7 +5761,7 @@ export default function AdminPanel({
                 </div>
 
                 {/* Direct User Assignments Panel */}
-                <div 
+                <div
                   className="bg-white p-4 rounded-xl border border-gray-200 space-y-3 relative"
                   ref={assignedUsersRef}
                 >
@@ -5039,15 +5771,21 @@ export default function AdminPanel({
                         👥 Direct User Assignments (Optional)
                       </h5>
                       <p className="text-[10px] text-gray-400 font-medium">
-                        Directly assign this meeting to specific participants. When specified, only these users can see this meeting on their dashboard.
+                        Directly assign this meeting to specific participants.
+                        When specified, only these users can see this meeting on
+                        their dashboard.
                       </p>
                     </div>
                     <div className="flex gap-1.5 shrink-0 select-none">
                       <button
                         type="button"
                         onClick={() => {
-                          const nonAdmins = (state.profiles || []).filter((p: any) => p.role !== "admin");
-                          setMeetingAssignedUsers(nonAdmins.map((p: any) => p.id));
+                          const nonAdmins = (state.profiles || []).filter(
+                            (p: any) => p.role !== "admin",
+                          );
+                          setMeetingAssignedUsers(
+                            nonAdmins.map((p: any) => p.id),
+                          );
                         }}
                         className="px-2.5 py-1 text-[10px] font-bold text-[#4B5E40] bg-[#4B5E40]/5 hover:bg-[#4B5E40]/10 rounded-md border border-[#4B5E40]/15 transition cursor-pointer"
                       >
@@ -5091,19 +5829,30 @@ export default function AdminPanel({
 
                     {/* Selected Users Chips */}
                     {meetingAssignedUsers.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 mt-2" id="selected-assigned-users-chips">
+                      <div
+                        className="flex flex-wrap gap-1.5 mt-2"
+                        id="selected-assigned-users-chips"
+                      >
                         {meetingAssignedUsers.map((uId) => {
-                          const userProfile = (state.profiles || []).find((p: any) => p.id === uId);
+                          const userProfile = (state.profiles || []).find(
+                            (p: any) => p.id === uId,
+                          );
                           if (!userProfile) return null;
                           return (
                             <span
                               key={uId}
                               className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-bold rounded-lg border bg-[#4B5E40]/10 text-[#4B5E40] border-[#4B5E40]/25 animate-zoom-in"
                             >
-                              <span>{userProfile.fullName} ({userProfile.username})</span>
+                              <span>
+                                {userProfile.fullName} ({userProfile.username})
+                              </span>
                               <button
                                 type="button"
-                                onClick={() => setMeetingAssignedUsers((prev) => prev.filter((id) => id !== uId))}
+                                onClick={() =>
+                                  setMeetingAssignedUsers((prev) =>
+                                    prev.filter((id) => id !== uId),
+                                  )
+                                }
                                 className="w-3.5 h-3.5 rounded-full hover:bg-black/10 flex items-center justify-center font-bold text-[10px] text-gray-500 hover:text-gray-850 cursor-pointer"
                               >
                                 &times;
@@ -5115,65 +5864,91 @@ export default function AdminPanel({
                     )}
 
                     {/* Dropdown list */}
-                    {userDropdownOpen && (() => {
-                      const nonAdminProfiles = (state.profiles || []).filter((p: any) => p.role !== "admin");
-                      const filteredUsers = nonAdminProfiles.filter((p: any) => {
-                        const word = userSearchText.toLowerCase().trim();
-                        if (!word) return true;
-                        return (p.fullName || "").toLowerCase().includes(word) || 
-                               (p.username || "").toLowerCase().includes(word) ||
-                               (p.track || "").toLowerCase().includes(word) ||
-                               (p.learningLevel || "").toLowerCase().includes(word);
-                      });
+                    {userDropdownOpen &&
+                      (() => {
+                        const nonAdminProfiles = (state.profiles || []).filter(
+                          (p: any) => p.role !== "admin",
+                        );
+                        const filteredUsers = nonAdminProfiles.filter(
+                          (p: any) => {
+                            const word = userSearchText.toLowerCase().trim();
+                            if (!word) return true;
+                            return (
+                              (p.fullName || "").toLowerCase().includes(word) ||
+                              (p.username || "").toLowerCase().includes(word) ||
+                              (p.track || "").toLowerCase().includes(word) ||
+                              (p.learningLevel || "")
+                                .toLowerCase()
+                                .includes(word)
+                            );
+                          },
+                        );
 
-                      return (
-                        <div className="absolute top-[100%] left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-xs font-medium">
-                          {filteredUsers.length === 0 ? (
-                            <div className="p-3.5 text-center text-gray-400 italic">
-                              No matching students found.
-                            </div>
-                          ) : (
-                            filteredUsers.map((p: any) => {
-                              const isSelected = meetingAssignedUsers.includes(p.id);
-                              return (
-                                <div
-                                  key={p.id}
-                                  onClick={() => {
-                                    if (isSelected) {
-                                      setMeetingAssignedUsers((prev) => prev.filter((id) => id !== p.id));
-                                    } else {
-                                      setMeetingAssignedUsers((prev) => [...prev, p.id]);
-                                    }
-                                    setUserSearchText("");
-                                  }}
-                                  className={`flex items-center justify-between px-3.5 py-2 cursor-pointer select-none transition ${
-                                    isSelected
-                                      ? "bg-[#4B5E40]/10 text-[#4B5E40] font-extrabold"
-                                      : "hover:bg-gray-50 text-gray-750 font-medium"
-                                  }`}
-                                >
-                                  <div className="flex items-center gap-2">
-                                    {isSelected ? (
-                                      <span className="w-4 h-4 rounded bg-[#4B5E40] text-white flex items-center justify-center text-[10px] font-black">
-                                        ✓
-                                      </span>
-                                    ) : (
-                                      <span className="w-4 h-4 rounded border border-gray-300 bg-white"></span>
-                                    )}
-                                    <div className="flex flex-col">
-                                      <span className="font-bold text-gray-900">{p.fullName}</span>
-                                      <span className="text-[9.5px] text-gray-400">
-                                        @{p.username} • {p.track ? p.track.replace("– Beginner Level", "") : "No Track"} • {p.learningLevel || "Apprentice level 1"}
-                                      </span>
+                        return (
+                          <div className="absolute top-[100%] left-0 right-0 z-50 mt-1 max-h-60 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-xs font-medium">
+                            {filteredUsers.length === 0 ? (
+                              <div className="p-3.5 text-center text-gray-400 italic">
+                                No matching students found.
+                              </div>
+                            ) : (
+                              filteredUsers.map((p: any) => {
+                                const isSelected =
+                                  meetingAssignedUsers.includes(p.id);
+                                return (
+                                  <div
+                                    key={p.id}
+                                    onClick={() => {
+                                      if (isSelected) {
+                                        setMeetingAssignedUsers((prev) =>
+                                          prev.filter((id) => id !== p.id),
+                                        );
+                                      } else {
+                                        setMeetingAssignedUsers((prev) => [
+                                          ...prev,
+                                          p.id,
+                                        ]);
+                                      }
+                                      setUserSearchText("");
+                                    }}
+                                    className={`flex items-center justify-between px-3.5 py-2 cursor-pointer select-none transition ${
+                                      isSelected
+                                        ? "bg-[#4B5E40]/10 text-[#4B5E40] font-extrabold"
+                                        : "hover:bg-gray-50 text-gray-750 font-medium"
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {isSelected ? (
+                                        <span className="w-4 h-4 rounded bg-[#4B5E40] text-white flex items-center justify-center text-[10px] font-black">
+                                          ✓
+                                        </span>
+                                      ) : (
+                                        <span className="w-4 h-4 rounded border border-gray-300 bg-white"></span>
+                                      )}
+                                      <div className="flex flex-col">
+                                        <span className="font-bold text-gray-900">
+                                          {p.fullName}
+                                        </span>
+                                        <span className="text-[9.5px] text-gray-400">
+                                          @{p.username} •{" "}
+                                          {p.track
+                                            ? p.track.replace(
+                                                "– Beginner Level",
+                                                "",
+                                              )
+                                            : "No Track"}{" "}
+                                          •{" "}
+                                          {p.learningLevel ||
+                                            "Apprentice level 1"}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      );
-                    })()}
+                                );
+                              })
+                            )}
+                          </div>
+                        );
+                      })()}
                   </div>
                 </div>
 
@@ -5218,43 +5993,67 @@ export default function AdminPanel({
                     }
                     groupedMap[m.seriesId].push(m);
                   } else {
-                    const statusLower = String(m.status || "").trim().toLowerCase();
-                    if (statusLower !== "archived" && statusLower !== "completed") {
+                    const statusLower = String(m.status || "")
+                      .trim()
+                      .toLowerCase();
+                    if (
+                      statusLower !== "archived" &&
+                      statusLower !== "completed"
+                    ) {
                       standaloneActive.push(m);
                     }
                   }
                 });
 
                 // Convert grouped map to an array of series
-                const activeSeriesList = Object.entries(groupedMap).map(([seriesId, occurrences]) => {
-                  // Sort occurrences by date ascending
-                  const sortedOccurrences = [...occurrences].sort((a: any, b: any) => {
-                    const dateA = a.occurrenceDate || (a.meetingDates && a.meetingDates[0]) || "";
-                    const dateB = b.occurrenceDate || (b.meetingDates && b.meetingDates[0]) || "";
-                    return dateA.localeCompare(dateB);
-                  });
+                const activeSeriesList = Object.entries(groupedMap)
+                  .map(([seriesId, occurrences]) => {
+                    // Sort occurrences by date ascending
+                    const sortedOccurrences = [...occurrences].sort(
+                      (a: any, b: any) => {
+                        const dateA =
+                          a.occurrenceDate ||
+                          (a.meetingDates && a.meetingDates[0]) ||
+                          "";
+                        const dateB =
+                          b.occurrenceDate ||
+                          (b.meetingDates && b.meetingDates[0]) ||
+                          "";
+                        return dateA.localeCompare(dateB);
+                      },
+                    );
 
-                  // A series is active if at least one of its occurrences is active (not archived and not completed)
-                  const hasActiveOccurrence = sortedOccurrences.some((o: any) => {
-                    const s = String(o.status || "").toLowerCase().trim();
-                    return s !== "archived" && s !== "completed";
-                  });
+                    // A series is active if at least one of its occurrences is active (not archived and not completed)
+                    const hasActiveOccurrence = sortedOccurrences.some(
+                      (o: any) => {
+                        const s = String(o.status || "")
+                          .toLowerCase()
+                          .trim();
+                        return s !== "archived" && s !== "completed";
+                      },
+                    );
 
-                  // Representative can be the first active occurrence, or simply the first occurrence
-                  const representative = sortedOccurrences.find((o: any) => {
-                    const s = String(o.status || "").toLowerCase().trim();
-                    return s !== "archived" && s !== "completed";
-                  }) || sortedOccurrences[0];
+                    // Representative can be the first active occurrence, or simply the first occurrence
+                    const representative =
+                      sortedOccurrences.find((o: any) => {
+                        const s = String(o.status || "")
+                          .toLowerCase()
+                          .trim();
+                        return s !== "archived" && s !== "completed";
+                      }) || sortedOccurrences[0];
 
-                  return {
-                    seriesId,
-                    representative,
-                    occurrences: sortedOccurrences,
-                    isActive: hasActiveOccurrence
-                  };
-                }).filter(s => s.isActive);
+                    return {
+                      seriesId,
+                      representative,
+                      occurrences: sortedOccurrences,
+                      isActive: hasActiveOccurrence,
+                    };
+                  })
+                  .filter((s) => s.isActive);
 
-                const hasNoMeetings = standaloneActive.length === 0 && activeSeriesList.length === 0;
+                const hasNoMeetings =
+                  standaloneActive.length === 0 &&
+                  activeSeriesList.length === 0;
 
                 if (hasNoMeetings) {
                   return (
@@ -5316,53 +6115,75 @@ export default function AdminPanel({
                               <div className="flex items-start gap-1.5">
                                 <span className="text-gray-400">📅</span>
                                 <span className="leading-tight">
-                                  Recurrence Frequency: <strong className="text-[#4B5E40] uppercase">{rep.recurrenceFrequency || "one-time"}</strong>
+                                  Recurrence Frequency:{" "}
+                                  <strong className="text-[#4B5E40] uppercase">
+                                    {rep.recurrenceFrequency || "one-time"}
+                                  </strong>
                                   {rep.recurrenceStartDate && (
-                                    <> (From {rep.recurrenceStartDate} to {rep.recurrenceEndDate || "No End Date"})</>
+                                    <>
+                                      {" "}
+                                      (From {rep.recurrenceStartDate} to{" "}
+                                      {rep.recurrenceEndDate || "No End Date"})
+                                    </>
                                   )}
                                 </span>
                               </div>
                               <div className="flex flex-col gap-1 text-[11px] text-gray-500">
                                 <div className="flex items-start gap-1.5">
-                                  <span className="text-gray-400 mt-0.5">🛡️</span>
+                                  <span className="text-gray-400 mt-0.5">
+                                    🛡️
+                                  </span>
                                   <span className="leading-tight">
                                     User Level Eligibility:{" "}
                                     <strong className="text-[#4B5E40] uppercase">
-                                      {getUserLevelsDisplay(rep.trackId, rep.userLevels)}
+                                      {getUserLevelsDisplay(
+                                        rep.trackId,
+                                        rep.userLevels,
+                                      )}
                                     </strong>
                                   </span>
                                 </div>
                                 <div className="flex items-start gap-1.5">
-                                  <span className="text-gray-400 mt-0.5">👥</span>
+                                  <span className="text-gray-400 mt-0.5">
+                                    👥
+                                  </span>
                                   <span className="leading-tight">
                                     Team Track Eligibility:{" "}
                                     <strong className="text-[#4B5E40] uppercase">
-                                      {getTeamTracksDisplay(rep.targetTeamTrackEligibility)}
+                                      {getTeamTracksDisplay(
+                                        rep.targetTeamTrackEligibility,
+                                      )}
                                     </strong>
                                   </span>
                                 </div>
                               </div>
                               <div className="flex items-center gap-1.5 font-mono text-[10px] break-all text-indigo-700 bg-indigo-50/40 p-1.5 rounded border border-indigo-100 mt-1">
-                                <strong>Common Jitsi Link:</strong> {rep.jitsiUrl}
+                                <strong>Common Jitsi Link:</strong>{" "}
+                                {rep.jitsiUrl}
                               </div>
                             </div>
                           </div>
 
                           <div className="flex gap-2 pt-2 border-t border-dashed border-gray-150 justify-between items-center mt-2">
                             <span className="text-gray-500 font-bold text-[11px]">
-                              Contains {series.occurrences.length} occurrences total
+                              Contains {series.occurrences.length} occurrences
+                              total
                             </span>
                             <button
                               type="button"
                               onClick={() => {
-                                setExpandedSeriesIds(prev => ({
+                                setExpandedSeriesIds((prev) => ({
                                   ...prev,
-                                  [series.seriesId]: !prev[series.seriesId]
+                                  [series.seriesId]: !prev[series.seriesId],
                                 }));
                               }}
                               className="px-3 py-1.5 text-[11px] font-black text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
                             >
-                              <span>{isExpanded ? "Collapse Series ⬆️" : "Expand Series ⬇️"}</span>
+                              <span>
+                                {isExpanded
+                                  ? "Collapse Series ⬆️"
+                                  : "Expand Series ⬇️"}
+                              </span>
                             </button>
                           </div>
 
@@ -5375,36 +6196,83 @@ export default function AdminPanel({
                               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                                 {series.occurrences.map((occurrence: any) => {
                                   // Compute eligibility/attendance for this occurrence
-                                  const eligibleAssignments = (state.meetingAssignments || []).filter(
-                                    (a: any) => a.meetingId === occurrence.id
+                                  const eligibleAssignments = (
+                                    state.meetingAssignments || []
+                                  ).filter(
+                                    (a: any) => a.meetingId === occurrence.id,
                                   );
-                                  const eligibleUserIds = eligibleAssignments.map((a: any) => a.userId);
-                                  const eligibleProfiles = (state.profiles || []).filter(
-                                    (p: any) => p.role !== "admin" && (
-                                      eligibleUserIds.includes(p.id) ||
-                                      isUserEligibleForMeetingInBackend(p, occurrence, state.meetingAssignments || []) ||
-                                      (state.attendance || []).some((a: any) => isMatchingLogForMeetingAndUser(a, occurrence, p))
-                                    )
+                                  const eligibleUserIds =
+                                    eligibleAssignments.map(
+                                      (a: any) => a.userId,
+                                    );
+                                  const eligibleProfiles = (
+                                    state.profiles || []
+                                  ).filter(
+                                    (p: any) =>
+                                      p.role !== "admin" &&
+                                      (eligibleUserIds.includes(p.id) ||
+                                        isUserEligibleForMeetingInBackend(
+                                          p,
+                                          occurrence,
+                                          state.meetingAssignments || [],
+                                        ) ||
+                                        (state.attendance || []).some(
+                                          (a: any) =>
+                                            isMatchingLogForMeetingAndUser(
+                                              a,
+                                              occurrence,
+                                              p,
+                                            ),
+                                        )),
                                   );
-                                  const attendanceLogs = (state.attendance || []).filter(
-                                    (a: any) => isMatchingLogForMeeting(a, occurrence)
+                                  const attendanceLogs = (
+                                    state.attendance || []
+                                  ).filter((a: any) =>
+                                    isMatchingLogForMeeting(a, occurrence),
                                   );
-                                  const joinedCount = eligibleProfiles.filter((p: any) => {
-                                    const userLogs = attendanceLogs.filter((l: any) => isMatchingLogForMeetingAndUser(l, occurrence, p));
-                                    const log = userLogs.find((l: any) => {
-                                      const s = (l.status || "").toLowerCase();
-                                      return !s.includes("miss") && !s.includes("absent");
-                                    }) || userLogs[0];
-                                    if (!log) return false;
-                                    const s = (log.status || "").toLowerCase();
-                                    return !s.includes("miss") && !s.includes("absent");
-                                  }).length;
-                                  const rawRateOcc = eligibleProfiles.length > 0 
-                                    ? (joinedCount / eligibleProfiles.length) * 100 
-                                    : 0;
-                                  const attendanceRate = rawRateOcc % 1 === 0 ? rawRateOcc.toFixed(0) : rawRateOcc.toFixed(1);
+                                  const joinedCount = eligibleProfiles.filter(
+                                    (p: any) => {
+                                      const userLogs = attendanceLogs.filter(
+                                        (l: any) =>
+                                          isMatchingLogForMeetingAndUser(
+                                            l,
+                                            occurrence,
+                                            p,
+                                          ),
+                                      );
+                                      const log =
+                                        userLogs.find((l: any) => {
+                                          const s = (
+                                            l.status || ""
+                                          ).toLowerCase();
+                                          return (
+                                            !s.includes("miss") &&
+                                            !s.includes("absent")
+                                          );
+                                        }) || userLogs[0];
+                                      if (!log) return false;
+                                      const s = (
+                                        log.status || ""
+                                      ).toLowerCase();
+                                      return (
+                                        !s.includes("miss") &&
+                                        !s.includes("absent")
+                                      );
+                                    },
+                                  ).length;
+                                  const rawRateOcc =
+                                    eligibleProfiles.length > 0
+                                      ? (joinedCount /
+                                          eligibleProfiles.length) *
+                                        100
+                                      : 0;
+                                  const attendanceRate =
+                                    rawRateOcc % 1 === 0
+                                      ? rawRateOcc.toFixed(0)
+                                      : rawRateOcc.toFixed(1);
 
-                                  const occStatus = occurrence.status || "Upcoming";
+                                  const occStatus =
+                                    occurrence.status || "Upcoming";
 
                                   return (
                                     <div
@@ -5419,22 +6287,32 @@ export default function AdminPanel({
                                           <span className="text-[10px] font-bold text-gray-500">
                                             🕒 {occurrence.timeString}
                                           </span>
-                                          <span className={`px-2 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
-                                            occStatus.toLowerCase() === "upcoming"
-                                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                                              : occStatus.toLowerCase() === "completed"
-                                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                : occStatus.toLowerCase() === "cancelled"
-                                                  ? "bg-rose-50 text-rose-700 border-rose-200"
-                                                  : "bg-gray-100 text-gray-700 border-gray-300"
-                                          }`}>
+                                          <span
+                                            className={`px-2 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
+                                              occStatus.toLowerCase() ===
+                                              "upcoming"
+                                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                                : occStatus.toLowerCase() ===
+                                                    "completed"
+                                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                  : occStatus.toLowerCase() ===
+                                                      "cancelled"
+                                                    ? "bg-rose-50 text-rose-700 border-rose-200"
+                                                    : "bg-gray-100 text-gray-700 border-gray-300"
+                                            }`}
+                                          >
                                             {occStatus}
                                           </span>
                                         </div>
                                         <div className="flex items-center gap-2 text-[10.5px] text-gray-600">
-                                          <span className="font-extrabold">Attendance rate:</span>
-                                          <span className={`font-black ${Number(attendanceRate) >= 70 ? 'text-emerald-700' : Number(attendanceRate) >= 40 ? 'text-amber-700' : 'text-rose-600'}`}>
-                                            {attendanceRate}% ({joinedCount} / {eligibleProfiles.length} Joined)
+                                          <span className="font-extrabold">
+                                            Attendance rate:
+                                          </span>
+                                          <span
+                                            className={`font-black ${Number(attendanceRate) >= 70 ? "text-emerald-700" : Number(attendanceRate) >= 40 ? "text-amber-700" : "text-rose-600"}`}
+                                          >
+                                            {attendanceRate}% ({joinedCount} /{" "}
+                                            {eligibleProfiles.length} Joined)
                                           </span>
                                         </div>
                                       </div>
@@ -5443,20 +6321,29 @@ export default function AdminPanel({
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            if (expandedAttendanceMeetingId === occurrence.id) {
-                                              setExpandedAttendanceMeetingId(null);
+                                            if (
+                                              expandedAttendanceMeetingId ===
+                                              occurrence.id
+                                            ) {
+                                              setExpandedAttendanceMeetingId(
+                                                null,
+                                              );
                                             } else {
-                                              setExpandedAttendanceMeetingId(occurrence.id);
+                                              setExpandedAttendanceMeetingId(
+                                                occurrence.id,
+                                              );
                                               setAttendanceFilterTab("all");
                                             }
                                           }}
                                           className={`px-2.5 py-1 text-[10.5px] font-bold rounded-lg transition cursor-pointer ${
-                                            expandedAttendanceMeetingId === occurrence.id
+                                            expandedAttendanceMeetingId ===
+                                            occurrence.id
                                               ? "bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold shadow-sm"
                                               : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100"
                                           }`}
                                         >
-                                          {expandedAttendanceMeetingId === occurrence.id
+                                          {expandedAttendanceMeetingId ===
+                                          occurrence.id
                                             ? "Close Attendance 📊"
                                             : "Track Attendance 📊"}
                                         </button>
@@ -5465,43 +6352,105 @@ export default function AdminPanel({
                                           onClick={() => {
                                             setEditingMeetingId(occurrence.id);
                                             setMeetingTitle(occurrence.title);
-                                            setMeetingTime(occurrence.timeString);
+                                            setMeetingTime(
+                                              occurrence.timeString,
+                                            );
                                             setMeetingUrl(occurrence.jitsiUrl);
                                             setMeetingType(occurrence.type);
-                                            const rawLevels = occurrence.userLevels !== undefined ? occurrence.userLevels : occurrence.trackId;
+                                            const rawLevels =
+                                              occurrence.userLevels !==
+                                              undefined
+                                                ? occurrence.userLevels
+                                                : occurrence.trackId;
                                             setMeetingTrack(
                                               Array.isArray(rawLevels)
                                                 ? rawLevels
-                                                : rawLevels === "All" || !rawLevels
+                                                : rawLevels === "All" ||
+                                                    !rawLevels
                                                   ? []
                                                   : [rawLevels],
                                             );
-                                            setMeetingTeamTracks(occurrence.targetTeamTrackEligibility || []);
-                                            setMeetingScheduleDays(occurrence.scheduleDays && occurrence.scheduleDays.length > 0 ? occurrence.scheduleDays : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
-                                            setMeetingDates(occurrence.meetingDates || []);
-                                            setMeetingDuration(occurrence.duration || "60 minutes");
-                                            setMeetingOrganizer(occurrence.organizer || "Admin Team");
-                                            setMeetingStatus(occurrence.status || "Upcoming");
-                                            setMeetingDescription(occurrence.description || "");
-                                            setMeetingAssignedUsers(occurrence.assignedUserIds || []);
+                                            setMeetingTeamTracks(
+                                              occurrence.targetTeamTrackEligibility ||
+                                                [],
+                                            );
+                                            setMeetingScheduleDays(
+                                              occurrence.scheduleDays &&
+                                                occurrence.scheduleDays.length >
+                                                  0
+                                                ? occurrence.scheduleDays
+                                                : [
+                                                    "Monday",
+                                                    "Tuesday",
+                                                    "Wednesday",
+                                                    "Thursday",
+                                                    "Friday",
+                                                  ],
+                                            );
+                                            setMeetingDates(
+                                              occurrence.meetingDates || [],
+                                            );
+                                            setMeetingDuration(
+                                              occurrence.duration ||
+                                                "60 minutes",
+                                            );
+                                            setMeetingOrganizer(
+                                              occurrence.organizer ||
+                                                "Admin Team",
+                                            );
+                                            setMeetingStatus(
+                                              occurrence.status || "Upcoming",
+                                            );
+                                            setMeetingDescription(
+                                              occurrence.description || "",
+                                            );
+                                            setMeetingAssignedUsers(
+                                              occurrence.assignedUserIds || [],
+                                            );
                                             setUserSearchText("");
                                             setIsRecurring(true);
-                                            setRecurrenceFrequency(occurrence.recurrenceFrequency || "one-time");
-                                            setRecurrenceStartDate(occurrence.recurrenceStartDate || "");
-                                            setRecurrenceEndDate(occurrence.recurrenceEndDate || "");
-                                            setRecurrenceCustomInterval(occurrence.recurrenceCustomInterval || 1);
+                                            setRecurrenceFrequency(
+                                              occurrence.recurrenceFrequency ||
+                                                "one-time",
+                                            );
+                                            setRecurrenceStartDate(
+                                              occurrence.recurrenceStartDate ||
+                                                "",
+                                            );
+                                            setRecurrenceEndDate(
+                                              occurrence.recurrenceEndDate ||
+                                                "",
+                                            );
+                                            setRecurrenceCustomInterval(
+                                              occurrence.recurrenceCustomInterval ||
+                                                1,
+                                            );
                                             setRecurrenceEditMode("single");
                                             setIsAddingMeeting(false);
                                             // Scroll back to editing form smoothly after state update
                                             setTimeout(() => {
-                                              const formElement = document.getElementById("meeting-edit-form-anchor");
+                                              const formElement =
+                                                document.getElementById(
+                                                  "meeting-edit-form-anchor",
+                                                );
                                               if (formElement) {
-                                                formElement.scrollIntoView({ behavior: "smooth", block: "start" });
+                                                formElement.scrollIntoView({
+                                                  behavior: "smooth",
+                                                  block: "start",
+                                                });
                                               } else {
                                                 setTimeout(() => {
-                                                  const formElementRetry = document.getElementById("meeting-edit-form-anchor");
+                                                  const formElementRetry =
+                                                    document.getElementById(
+                                                      "meeting-edit-form-anchor",
+                                                    );
                                                   if (formElementRetry) {
-                                                    formElementRetry.scrollIntoView({ behavior: "smooth", block: "start" });
+                                                    formElementRetry.scrollIntoView(
+                                                      {
+                                                        behavior: "smooth",
+                                                        block: "start",
+                                                      },
+                                                    );
                                                   }
                                                 }, 200);
                                               }
@@ -5528,207 +6477,354 @@ export default function AdminPanel({
                               </div>
 
                               {/* Render attendance drawer inline if active for any occurrence in this series */}
-                              {series.occurrences.some((occ: any) => expandedAttendanceMeetingId === occ.id) && (() => {
-                                const currentOcc = series.occurrences.find((occ: any) => expandedAttendanceMeetingId === occ.id);
-                                const eligibleAssignments = (state.meetingAssignments || []).filter(
-                                  (a: any) => a.meetingId === currentOcc.id
-                                );
-                                const eligibleUserIds = eligibleAssignments.map((a: any) => a.userId);
-                                const eligibleProfiles = (state.profiles || []).filter(
-                                  (p: any) => p.role !== "admin" && (
-                                    eligibleUserIds.includes(p.id) ||
-                                    isUserEligibleForMeetingInBackend(p, currentOcc, state.meetingAssignments || []) ||
-                                    (state.attendance || []).some((a: any) => isMatchingLogForMeetingAndUser(a, currentOcc, p))
-                                  )
-                                );
-                                const attendanceLogs = (state.attendance || []).filter(
-                                  (a: any) => isMatchingLogForMeeting(a, currentOcc)
-                                );
-                                const onTimeList: any[] = [];
-                                const lateList: any[] = [];
-                                const absentList: any[] = [];
+                              {series.occurrences.some(
+                                (occ: any) =>
+                                  expandedAttendanceMeetingId === occ.id,
+                              ) &&
+                                (() => {
+                                  const currentOcc = series.occurrences.find(
+                                    (occ: any) =>
+                                      expandedAttendanceMeetingId === occ.id,
+                                  );
+                                  const eligibleAssignments = (
+                                    state.meetingAssignments || []
+                                  ).filter(
+                                    (a: any) => a.meetingId === currentOcc.id,
+                                  );
+                                  const eligibleUserIds =
+                                    eligibleAssignments.map(
+                                      (a: any) => a.userId,
+                                    );
+                                  const eligibleProfiles = (
+                                    state.profiles || []
+                                  ).filter(
+                                    (p: any) =>
+                                      p.role !== "admin" &&
+                                      (eligibleUserIds.includes(p.id) ||
+                                        isUserEligibleForMeetingInBackend(
+                                          p,
+                                          currentOcc,
+                                          state.meetingAssignments || [],
+                                        ) ||
+                                        (state.attendance || []).some(
+                                          (a: any) =>
+                                            isMatchingLogForMeetingAndUser(
+                                              a,
+                                              currentOcc,
+                                              p,
+                                            ),
+                                        )),
+                                  );
+                                  const attendanceLogs = (
+                                    state.attendance || []
+                                  ).filter((a: any) =>
+                                    isMatchingLogForMeeting(a, currentOcc),
+                                  );
+                                  const onTimeList: any[] = [];
+                                  const lateList: any[] = [];
+                                  const absentList: any[] = [];
 
-                                eligibleProfiles.forEach((p: any) => {
-                                  const userLogs = attendanceLogs.filter((l: any) => isMatchingLogForMeetingAndUser(l, currentOcc, p));
-                                  const log = userLogs.find((l: any) => {
-                                    const s = (l.status || "").toLowerCase();
-                                    return !s.includes("miss") && !s.includes("absent");
-                                  }) || userLogs[0];
-                                  const baseItem = {
-                                    id: p.id,
-                                    fullName: p.fullName,
-                                    username: p.username,
-                                    learningLevel: p.learningLevel || p.techExperience || "Apprentice level 1",
-                                    track: p.track || "General",
-                                    attended: !!(log && !(log.status || "").toLowerCase().includes("miss") && !(log.status || "").toLowerCase().includes("absent")),
-                                    timestamp: log ? log.timestamp : null
-                                  };
+                                  eligibleProfiles.forEach((p: any) => {
+                                    const userLogs = attendanceLogs.filter(
+                                      (l: any) =>
+                                        isMatchingLogForMeetingAndUser(
+                                          l,
+                                          currentOcc,
+                                          p,
+                                        ),
+                                    );
+                                    const log =
+                                      userLogs.find((l: any) => {
+                                        const s = (
+                                          l.status || ""
+                                        ).toLowerCase();
+                                        return (
+                                          !s.includes("miss") &&
+                                          !s.includes("absent")
+                                        );
+                                      }) || userLogs[0];
+                                    const baseItem = {
+                                      id: p.id,
+                                      fullName: p.fullName,
+                                      username: p.username,
+                                      learningLevel:
+                                        p.learningLevel ||
+                                        p.techExperience ||
+                                        "Apprentice level 1",
+                                      track: p.track || "General",
+                                      attended: !!(
+                                        log &&
+                                        !(log.status || "")
+                                          .toLowerCase()
+                                          .includes("miss") &&
+                                        !(log.status || "")
+                                          .toLowerCase()
+                                          .includes("absent")
+                                      ),
+                                      timestamp: log ? log.timestamp : null,
+                                    };
 
-                                  if (!log) {
-                                    absentList.push({ ...baseItem, status: "Absent" });
-                                  } else {
-                                    const s = (log.status || "").toLowerCase();
-                                    if (s.includes("late")) {
-                                      lateList.push({ ...baseItem, status: "Attended Late" });
-                                    } else if (s.includes("miss") || s.includes("absent")) {
-                                      absentList.push({ ...baseItem, status: "Absent" });
+                                    if (!log) {
+                                      absentList.push({
+                                        ...baseItem,
+                                        status: "Absent",
+                                      });
                                     } else {
-                                      onTimeList.push({ ...baseItem, status: "Attended On Time" });
+                                      const s = (
+                                        log.status || ""
+                                      ).toLowerCase();
+                                      if (s.includes("late")) {
+                                        lateList.push({
+                                          ...baseItem,
+                                          status: "Attended Late",
+                                        });
+                                      } else if (
+                                        s.includes("miss") ||
+                                        s.includes("absent")
+                                      ) {
+                                        absentList.push({
+                                          ...baseItem,
+                                          status: "Absent",
+                                        });
+                                      } else {
+                                        onTimeList.push({
+                                          ...baseItem,
+                                          status: "Attended On Time",
+                                        });
+                                      }
                                     }
-                                  }
-                                });
+                                  });
 
-                                const list = [...onTimeList, ...lateList, ...absentList];
+                                  const list = [
+                                    ...onTimeList,
+                                    ...lateList,
+                                    ...absentList,
+                                  ];
 
-                                const displayedList = 
-                                  attendanceFilterTab === "on_time" 
-                                    ? onTimeList 
-                                    : attendanceFilterTab === "late" 
-                                      ? lateList 
-                                      : attendanceFilterTab === "absent" 
-                                        ? absentList 
-                                        : list;
+                                  const displayedList =
+                                    attendanceFilterTab === "on_time"
+                                      ? onTimeList
+                                      : attendanceFilterTab === "late"
+                                        ? lateList
+                                        : attendanceFilterTab === "absent"
+                                          ? absentList
+                                          : list;
 
-                                const rawRate = list.length > 0 
-                                  ? ((onTimeList.length + lateList.length) / list.length) * 100 
-                                  : 0;
-                                const attendanceRate = rawRate % 1 === 0 ? rawRate.toFixed(0) : rawRate.toFixed(1);
+                                  const rawRate =
+                                    list.length > 0
+                                      ? ((onTimeList.length + lateList.length) /
+                                          list.length) *
+                                        100
+                                      : 0;
+                                  const attendanceRate =
+                                    rawRate % 1 === 0
+                                      ? rawRate.toFixed(0)
+                                      : rawRate.toFixed(1);
 
-                                return (
-                                  <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-250 space-y-3 animate-fade-in text-left">
-                                    <div className="flex items-center justify-between border-b border-gray-150 pb-2">
-                                      <div className="flex items-center gap-1.5 text-[#4B5E40] font-extrabold text-xs">
-                                        <Users className="w-4 h-4" />
-                                        <span>Attendance Summary for {currentOcc.occurrenceDate}</span>
-                                      </div>
-                                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-gray-200 text-gray-750 rounded-full">
-                                        {onTimeList.length + lateList.length} / {list.length} Joined
-                                      </span>
-                                    </div>
-
-                                    {/* Metrics display */}
-                                    <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
-                                      <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
-                                        <div className="text-[8px] uppercase font-bold text-gray-400">Rate</div>
-                                        <div className="text-xs font-black text-[#4B5E40]">{attendanceRate}%</div>
-                                      </div>
-                                      <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
-                                        <div className="text-[8px] uppercase font-bold text-emerald-600">On Time</div>
-                                        <div className="text-xs font-black text-emerald-700">{onTimeList.length}</div>
-                                      </div>
-                                      <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
-                                        <div className="text-[8px] uppercase font-bold text-amber-600">Late</div>
-                                        <div className="text-xs font-black text-amber-700">{lateList.length}</div>
-                                      </div>
-                                      <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
-                                        <div className="text-[8px] uppercase font-bold text-rose-500">Absent</div>
-                                        <div className="text-xs font-black text-rose-700">{absentList.length}</div>
-                                      </div>
-                                    </div>
-
-                                    {/* Filter tabs */}
-                                    <div className="flex gap-1 bg-gray-200/70 p-0.5 rounded-lg text-[10px] font-bold">
-                                      <button
-                                        type="button"
-                                        onClick={() => setAttendanceFilterTab("all")}
-                                        className={`flex-1 py-1 rounded-md text-center transition ${
-                                          attendanceFilterTab === "all" ? "bg-white text-gray-800 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                        }`}
-                                      >
-                                        All ({list.length})
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setAttendanceFilterTab("on_time")}
-                                        className={`flex-1 py-1 rounded-md text-center transition ${
-                                          attendanceFilterTab === "on_time" ? "bg-white text-emerald-700 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                        }`}
-                                      >
-                                        On Time ({onTimeList.length})
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setAttendanceFilterTab("late")}
-                                        className={`flex-1 py-1 rounded-md text-center transition ${
-                                          attendanceFilterTab === "late" ? "bg-white text-amber-700 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                        }`}
-                                      >
-                                        Late ({lateList.length})
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setAttendanceFilterTab("absent")}
-                                        className={`flex-1 py-1 rounded-md text-center transition ${
-                                          attendanceFilterTab === "absent" ? "bg-white text-rose-600 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                        }`}
-                                      >
-                                        Absent ({absentList.length})
-                                      </button>
-                                    </div>
-
-                                    {/* Attendance rows */}
-                                    <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
-                                      {displayedList.length === 0 ? (
-                                        <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
-                                          No records match this filter.
+                                  return (
+                                    <div className="mt-3 p-4 bg-gray-50 rounded-xl border border-gray-250 space-y-3 animate-fade-in text-left">
+                                      <div className="flex items-center justify-between border-b border-gray-150 pb-2">
+                                        <div className="flex items-center gap-1.5 text-[#4B5E40] font-extrabold text-xs">
+                                          <Users className="w-4 h-4" />
+                                          <span>
+                                            Attendance Summary for{" "}
+                                            {currentOcc.occurrenceDate}
+                                          </span>
                                         </div>
-                                      ) : (
-                                        displayedList.map((item: any) => {
-                                          const initials = (item.fullName || item.username || "U")
-                                            .split(" ")
-                                            .map((n: string) => n[0])
-                                            .join("")
-                                            .substring(0, 2)
-                                            .toUpperCase();
+                                        <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-gray-200 text-gray-750 rounded-full">
+                                          {onTimeList.length + lateList.length}{" "}
+                                          / {list.length} Joined
+                                        </span>
+                                      </div>
 
-                                          return (
-                                            <div
-                                              key={item.id}
-                                              className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
-                                            >
-                                              <div className="flex items-center gap-1.5 min-w-0">
-                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                                                  item.attended ? "bg-[#4B5E40] text-white" : "bg-gray-200 text-gray-600"
-                                                }`}>
-                                                  {initials}
-                                                </div>
-                                                <div className="min-w-0">
-                                                  <div className="font-extrabold text-[11px] text-gray-800 truncate">{item.fullName}</div>
-                                                  <div className="text-[9px] text-gray-400 truncate">@{item.username} • {item.track}</div>
-                                                </div>
-                                              </div>
+                                      {/* Metrics display */}
+                                      <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                                        <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
+                                          <div className="text-[8px] uppercase font-bold text-gray-400">
+                                            Rate
+                                          </div>
+                                          <div className="text-xs font-black text-[#4B5E40]">
+                                            {attendanceRate}%
+                                          </div>
+                                        </div>
+                                        <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
+                                          <div className="text-[8px] uppercase font-bold text-emerald-600">
+                                            On Time
+                                          </div>
+                                          <div className="text-xs font-black text-emerald-700">
+                                            {onTimeList.length}
+                                          </div>
+                                        </div>
+                                        <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
+                                          <div className="text-[8px] uppercase font-bold text-amber-600">
+                                            Late
+                                          </div>
+                                          <div className="text-xs font-black text-amber-700">
+                                            {lateList.length}
+                                          </div>
+                                        </div>
+                                        <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
+                                          <div className="text-[8px] uppercase font-bold text-rose-500">
+                                            Absent
+                                          </div>
+                                          <div className="text-xs font-black text-rose-700">
+                                            {absentList.length}
+                                          </div>
+                                        </div>
+                                      </div>
 
-                                              <div className="flex flex-col items-end shrink-0 gap-0.5">
-                                                <span className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
-                                                  item.status === "Attended" || item.status === "on time" || item.status === "Attended On Time"
-                                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                    : item.status === "Late" || item.status === "Attended Late"
-                                                      ? "bg-amber-50 text-amber-700 border-amber-200"
-                                                      : "bg-rose-50 text-rose-700 border-rose-200"
-                                                }`}>
-                                                  {item.status}
-                                                </span>
-                                                {item.attended && item.timestamp && (
-                                                  <span className="text-[8.5px] text-gray-400">
-                                                    {(() => {
-                                                      try {
-                                                        const d = new Date(item.timestamp);
-                                                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                                      } catch (_) {
-                                                        return "";
-                                                      }
-                                                    })()}
+                                      {/* Filter tabs */}
+                                      <div className="flex gap-1 bg-gray-200/70 p-0.5 rounded-lg text-[10px] font-bold">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setAttendanceFilterTab("all")
+                                          }
+                                          className={`flex-1 py-1 rounded-md text-center transition ${
+                                            attendanceFilterTab === "all"
+                                              ? "bg-white text-gray-800 shadow-2xs font-extrabold"
+                                              : "text-gray-500 hover:text-gray-950"
+                                          }`}
+                                        >
+                                          All ({list.length})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setAttendanceFilterTab("on_time")
+                                          }
+                                          className={`flex-1 py-1 rounded-md text-center transition ${
+                                            attendanceFilterTab === "on_time"
+                                              ? "bg-white text-emerald-700 shadow-2xs font-extrabold"
+                                              : "text-gray-500 hover:text-gray-950"
+                                          }`}
+                                        >
+                                          On Time ({onTimeList.length})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setAttendanceFilterTab("late")
+                                          }
+                                          className={`flex-1 py-1 rounded-md text-center transition ${
+                                            attendanceFilterTab === "late"
+                                              ? "bg-white text-amber-700 shadow-2xs font-extrabold"
+                                              : "text-gray-500 hover:text-gray-950"
+                                          }`}
+                                        >
+                                          Late ({lateList.length})
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setAttendanceFilterTab("absent")
+                                          }
+                                          className={`flex-1 py-1 rounded-md text-center transition ${
+                                            attendanceFilterTab === "absent"
+                                              ? "bg-white text-rose-600 shadow-2xs font-extrabold"
+                                              : "text-gray-500 hover:text-gray-950"
+                                          }`}
+                                        >
+                                          Absent ({absentList.length})
+                                        </button>
+                                      </div>
+
+                                      {/* Attendance rows */}
+                                      <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
+                                        {displayedList.length === 0 ? (
+                                          <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
+                                            No records match this filter.
+                                          </div>
+                                        ) : (
+                                          displayedList.map((item: any) => {
+                                            const initials = (
+                                              item.fullName ||
+                                              item.username ||
+                                              "U"
+                                            )
+                                              .split(" ")
+                                              .map((n: string) => n[0])
+                                              .join("")
+                                              .substring(0, 2)
+                                              .toUpperCase();
+
+                                            return (
+                                              <div
+                                                key={item.id}
+                                                className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
+                                              >
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                  <div
+                                                    className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                                                      item.attended
+                                                        ? "bg-[#4B5E40] text-white"
+                                                        : "bg-gray-200 text-gray-600"
+                                                    }`}
+                                                  >
+                                                    {initials}
+                                                  </div>
+                                                  <div className="min-w-0">
+                                                    <div className="font-extrabold text-[11px] text-gray-800 truncate">
+                                                      {item.fullName}
+                                                    </div>
+                                                    <div className="text-[9px] text-gray-400 truncate">
+                                                      @{item.username} •{" "}
+                                                      {item.track}
+                                                    </div>
+                                                  </div>
+                                                </div>
+
+                                                <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                                  <span
+                                                    className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
+                                                      item.status ===
+                                                        "Attended" ||
+                                                      item.status ===
+                                                        "on time" ||
+                                                      item.status ===
+                                                        "Attended On Time"
+                                                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                        : item.status ===
+                                                              "Late" ||
+                                                            item.status ===
+                                                              "Attended Late"
+                                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                          : "bg-rose-50 text-rose-700 border-rose-200"
+                                                    }`}
+                                                  >
+                                                    {item.status}
                                                   </span>
-                                                )}
+                                                  {item.attended &&
+                                                    item.timestamp && (
+                                                      <span className="text-[8.5px] text-gray-400">
+                                                        {(() => {
+                                                          try {
+                                                            const d = new Date(
+                                                              item.timestamp,
+                                                            );
+                                                            return d.toLocaleTimeString(
+                                                              [],
+                                                              {
+                                                                hour: "2-digit",
+                                                                minute:
+                                                                  "2-digit",
+                                                              },
+                                                            );
+                                                          } catch (_) {
+                                                            return "";
+                                                          }
+                                                        })()}
+                                                      </span>
+                                                    )}
+                                                </div>
                                               </div>
-                                            </div>
-                                          );
-                                        })
-                                      )}
+                                            );
+                                          })
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              })()}
+                                  );
+                                })()}
                             </div>
                           )}
                         </div>
@@ -5876,11 +6972,17 @@ export default function AdminPanel({
                                     ],
                               );
                               setMeetingDates(meeting.meetingDates || []);
-                              setMeetingDuration(meeting.duration || "60 minutes");
-                              setMeetingOrganizer(meeting.organizer || "Admin Team");
+                              setMeetingDuration(
+                                meeting.duration || "60 minutes",
+                              );
+                              setMeetingOrganizer(
+                                meeting.organizer || "Admin Team",
+                              );
                               setMeetingStatus(meeting.status || "Upcoming");
                               setMeetingDescription(meeting.description || "");
-                              setMeetingAssignedUsers(meeting.assignedUserIds || []);
+                              setMeetingAssignedUsers(
+                                meeting.assignedUserIds || [],
+                              );
                               setUserSearchText("");
                               setIsRecurring(false);
                               setRecurrenceFrequency("one-time");
@@ -5891,14 +6993,25 @@ export default function AdminPanel({
                               setIsAddingMeeting(false);
                               // Scroll back to editing form smoothly after state update
                               setTimeout(() => {
-                                const formElement = document.getElementById("meeting-edit-form-anchor");
+                                const formElement = document.getElementById(
+                                  "meeting-edit-form-anchor",
+                                );
                                 if (formElement) {
-                                  formElement.scrollIntoView({ behavior: "smooth", block: "start" });
+                                  formElement.scrollIntoView({
+                                    behavior: "smooth",
+                                    block: "start",
+                                  });
                                 } else {
                                   setTimeout(() => {
-                                    const formElementRetry = document.getElementById("meeting-edit-form-anchor");
+                                    const formElementRetry =
+                                      document.getElementById(
+                                        "meeting-edit-form-anchor",
+                                      );
                                     if (formElementRetry) {
-                                      formElementRetry.scrollIntoView({ behavior: "smooth", block: "start" });
+                                      formElementRetry.scrollIntoView({
+                                        behavior: "smooth",
+                                        block: "start",
+                                      });
                                     }
                                   }, 200);
                                 }
@@ -5921,207 +7034,326 @@ export default function AdminPanel({
                         </div>
 
                         {/* Standalone Attendance Drawer */}
-                        {expandedAttendanceMeetingId === meeting.id && (() => {
-                          const eligibleAssignments = (state.meetingAssignments || []).filter(
-                            (a: any) => a.meetingId === meeting.id
-                          );
-                          const eligibleUserIds = eligibleAssignments.map((a: any) => a.userId);
-                          const eligibleProfiles = (state.profiles || []).filter(
-                            (p: any) => p.role !== "admin" && (
-                              eligibleUserIds.includes(p.id) ||
-                              isUserEligibleForMeetingInBackend(p, meeting, state.meetingAssignments || []) ||
-                              (state.attendance || []).some((a: any) => isMatchingLogForMeetingAndUser(a, meeting, p))
-                            )
-                          );
-                          const attendanceLogs = (state.attendance || []).filter(
-                            (a: any) => isMatchingLogForMeeting(a, meeting)
-                          );
-                          
-                          const onTimeList: any[] = [];
-                          const lateList: any[] = [];
-                          const absentList: any[] = [];
+                        {expandedAttendanceMeetingId === meeting.id &&
+                          (() => {
+                            const eligibleAssignments = (
+                              state.meetingAssignments || []
+                            ).filter((a: any) => a.meetingId === meeting.id);
+                            const eligibleUserIds = eligibleAssignments.map(
+                              (a: any) => a.userId,
+                            );
+                            const eligibleProfiles = (
+                              state.profiles || []
+                            ).filter(
+                              (p: any) =>
+                                p.role !== "admin" &&
+                                (eligibleUserIds.includes(p.id) ||
+                                  isUserEligibleForMeetingInBackend(
+                                    p,
+                                    meeting,
+                                    state.meetingAssignments || [],
+                                  ) ||
+                                  (state.attendance || []).some((a: any) =>
+                                    isMatchingLogForMeetingAndUser(
+                                      a,
+                                      meeting,
+                                      p,
+                                    ),
+                                  )),
+                            );
+                            const attendanceLogs = (
+                              state.attendance || []
+                            ).filter((a: any) =>
+                              isMatchingLogForMeeting(a, meeting),
+                            );
 
-                          eligibleProfiles.forEach((p: any) => {
-                            const userLogs = attendanceLogs.filter((l: any) => isMatchingLogForMeetingAndUser(l, meeting, p));
-                            const log = userLogs.find((l: any) => {
-                              const s = (l.status || "").toLowerCase();
-                              return !s.includes("miss") && !s.includes("absent");
-                            }) || userLogs[0];
-                            const baseItem = {
-                              id: p.id,
-                              fullName: p.fullName,
-                              username: p.username,
-                              learningLevel: p.learningLevel || p.techExperience || "Apprentice level 1",
-                              track: p.track || "General",
-                              attended: !!(log && !(log.status || "").toLowerCase().includes("miss") && !(log.status || "").toLowerCase().includes("absent")),
-                              timestamp: log ? log.timestamp : null
-                            };
+                            const onTimeList: any[] = [];
+                            const lateList: any[] = [];
+                            const absentList: any[] = [];
 
-                            if (!log) {
-                              absentList.push({ ...baseItem, status: "Absent" });
-                            } else {
-                              const s = (log.status || "").toLowerCase();
-                              if (s.includes("late")) {
-                                lateList.push({ ...baseItem, status: "Attended Late" });
-                              } else if (s.includes("miss") || s.includes("absent")) {
-                                absentList.push({ ...baseItem, status: "Absent" });
+                            eligibleProfiles.forEach((p: any) => {
+                              const userLogs = attendanceLogs.filter((l: any) =>
+                                isMatchingLogForMeetingAndUser(l, meeting, p),
+                              );
+                              const log =
+                                userLogs.find((l: any) => {
+                                  const s = (l.status || "").toLowerCase();
+                                  return (
+                                    !s.includes("miss") && !s.includes("absent")
+                                  );
+                                }) || userLogs[0];
+                              const baseItem = {
+                                id: p.id,
+                                fullName: p.fullName,
+                                username: p.username,
+                                learningLevel:
+                                  p.learningLevel ||
+                                  p.techExperience ||
+                                  "Apprentice level 1",
+                                track: p.track || "General",
+                                attended: !!(
+                                  log &&
+                                  !(log.status || "")
+                                    .toLowerCase()
+                                    .includes("miss") &&
+                                  !(log.status || "")
+                                    .toLowerCase()
+                                    .includes("absent")
+                                ),
+                                timestamp: log ? log.timestamp : null,
+                              };
+
+                              if (!log) {
+                                absentList.push({
+                                  ...baseItem,
+                                  status: "Absent",
+                                });
                               } else {
-                                onTimeList.push({ ...baseItem, status: "Attended On Time" });
+                                const s = (log.status || "").toLowerCase();
+                                if (s.includes("late")) {
+                                  lateList.push({
+                                    ...baseItem,
+                                    status: "Attended Late",
+                                  });
+                                } else if (
+                                  s.includes("miss") ||
+                                  s.includes("absent")
+                                ) {
+                                  absentList.push({
+                                    ...baseItem,
+                                    status: "Absent",
+                                  });
+                                } else {
+                                  onTimeList.push({
+                                    ...baseItem,
+                                    status: "Attended On Time",
+                                  });
+                                }
                               }
-                            }
-                          });
+                            });
 
-                          const list = [...onTimeList, ...lateList, ...absentList];
+                            const list = [
+                              ...onTimeList,
+                              ...lateList,
+                              ...absentList,
+                            ];
 
-                          const displayedList = 
-                            attendanceFilterTab === "on_time" 
-                              ? onTimeList 
-                              : attendanceFilterTab === "late" 
-                                ? lateList 
-                                : attendanceFilterTab === "absent" 
-                                  ? absentList 
-                                  : list;
+                            const displayedList =
+                              attendanceFilterTab === "on_time"
+                                ? onTimeList
+                                : attendanceFilterTab === "late"
+                                  ? lateList
+                                  : attendanceFilterTab === "absent"
+                                    ? absentList
+                                    : list;
 
-                          const rawRate = list.length > 0 
-                            ? ((onTimeList.length + lateList.length) / list.length) * 100 
-                            : 0;
-                          const attendanceRate = rawRate % 1 === 0 ? rawRate.toFixed(0) : rawRate.toFixed(1);
+                            const rawRate =
+                              list.length > 0
+                                ? ((onTimeList.length + lateList.length) /
+                                    list.length) *
+                                  100
+                                : 0;
+                            const attendanceRate =
+                              rawRate % 1 === 0
+                                ? rawRate.toFixed(0)
+                                : rawRate.toFixed(1);
 
-                          return (
-                            <div
-                              className="mt-3 p-3 bg-white border border-gray-200 rounded-xl space-y-3 animate-fade-in text-left col-span-1 md:col-span-2"
-                              id={`attendance-tracker-panel-${meeting.id}`}
-                            >
-                              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                                <div className="flex items-center gap-1.5 text-[#4B5E40] font-extrabold text-xs">
-                                  <Users className="w-4 h-4" />
-                                  <span>Attendance Summary</span>
-                                </div>
-                                <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-gray-100 text-gray-750 rounded-full">
-                                  {onTimeList.length + lateList.length} / {list.length} Joined
-                                </span>
-                              </div>
-
-                              <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
-                                <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
-                                  <div className="text-[8px] uppercase font-bold text-gray-400">Rate</div>
-                                  <div className="text-xs font-black text-[#4B5E40]">{attendanceRate}%</div>
-                                </div>
-                                <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
-                                  <div className="text-[8px] uppercase font-bold text-emerald-600">On Time</div>
-                                  <div className="text-xs font-black text-emerald-700">{onTimeList.length}</div>
-                                </div>
-                                <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
-                                  <div className="text-[8px] uppercase font-bold text-amber-600">Late</div>
-                                  <div className="text-xs font-black text-amber-700">{lateList.length}</div>
-                                </div>
-                                <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
-                                  <div className="text-[8px] uppercase font-bold text-rose-500">Absent</div>
-                                  <div className="text-xs font-black text-rose-700">{absentList.length}</div>
-                                </div>
-                              </div>
-
-                              <div className="flex gap-1 bg-gray-150/60 p-0.5 rounded-lg text-[10px] font-bold">
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceFilterTab("all")}
-                                  className={`flex-1 py-1 rounded-md text-center transition ${
-                                    attendanceFilterTab === "all" ? "bg-white text-gray-800 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                  }`}
-                                >
-                                  All ({list.length})
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceFilterTab("on_time")}
-                                  className={`flex-1 py-1 rounded-md text-center transition ${
-                                    attendanceFilterTab === "on_time" ? "bg-white text-emerald-700 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                  }`}
-                                >
-                                  On Time ({onTimeList.length})
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceFilterTab("late")}
-                                  className={`flex-1 py-1 rounded-md text-center transition ${
-                                    attendanceFilterTab === "late" ? "bg-white text-amber-700 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                  }`}
-                                >
-                                  Late ({lateList.length})
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setAttendanceFilterTab("absent")}
-                                  className={`flex-1 py-1 rounded-md text-center transition ${
-                                    attendanceFilterTab === "absent" ? "bg-white text-rose-600 shadow-2xs font-extrabold" : "text-gray-500 hover:text-gray-950"
-                                  }`}
-                                >
-                                  Absent ({absentList.length})
-                                </button>
-                              </div>
-
-                              <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
-                                {displayedList.length === 0 ? (
-                                  <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
-                                    No records match this filter.
+                            return (
+                              <div
+                                className="mt-3 p-3 bg-white border border-gray-200 rounded-xl space-y-3 animate-fade-in text-left col-span-1 md:col-span-2"
+                                id={`attendance-tracker-panel-${meeting.id}`}
+                              >
+                                <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                  <div className="flex items-center gap-1.5 text-[#4B5E40] font-extrabold text-xs">
+                                    <Users className="w-4 h-4" />
+                                    <span>Attendance Summary</span>
                                   </div>
-                                ) : (
-                                  displayedList.map((item: any) => {
-                                    const initials = (item.fullName || item.username || "U")
-                                      .split(" ")
-                                      .map((n: string) => n[0])
-                                      .join("")
-                                      .substring(0, 2)
-                                      .toUpperCase();
+                                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 bg-gray-100 text-gray-750 rounded-full">
+                                    {onTimeList.length + lateList.length} /{" "}
+                                    {list.length} Joined
+                                  </span>
+                                </div>
 
-                                    return (
-                                      <div
-                                        key={item.id}
-                                        className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
-                                      >
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                                            item.attended ? "bg-[#4B5E40] text-white" : "bg-gray-200 text-gray-600"
-                                          }`}>
-                                            {initials}
-                                          </div>
-                                          <div className="min-w-0">
-                                            <div className="font-extrabold text-[11px] text-gray-800 truncate">{item.fullName}</div>
-                                            <div className="text-[9px] text-gray-400 truncate">@{item.username} • {item.track}</div>
-                                          </div>
-                                        </div>
+                                <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                                  <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
+                                    <div className="text-[8px] uppercase font-bold text-gray-400">
+                                      Rate
+                                    </div>
+                                    <div className="text-xs font-black text-[#4B5E40]">
+                                      {attendanceRate}%
+                                    </div>
+                                  </div>
+                                  <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
+                                    <div className="text-[8px] uppercase font-bold text-emerald-600">
+                                      On Time
+                                    </div>
+                                    <div className="text-xs font-black text-emerald-700">
+                                      {onTimeList.length}
+                                    </div>
+                                  </div>
+                                  <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
+                                    <div className="text-[8px] uppercase font-bold text-amber-600">
+                                      Late
+                                    </div>
+                                    <div className="text-xs font-black text-amber-700">
+                                      {lateList.length}
+                                    </div>
+                                  </div>
+                                  <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
+                                    <div className="text-[8px] uppercase font-bold text-rose-500">
+                                      Absent
+                                    </div>
+                                    <div className="text-xs font-black text-rose-700">
+                                      {absentList.length}
+                                    </div>
+                                  </div>
+                                </div>
 
-                                        <div className="flex flex-col items-end shrink-0 gap-0.5">
-                                          <span className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
-                                            item.status === "Attended" || item.status === "on time" || item.status === "Attended On Time"
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                              : item.status === "Late" || item.status === "Attended Late"
-                                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                                : "bg-rose-50 text-rose-700 border-rose-200"
-                                          }`}>
-                                            {item.status}
-                                          </span>
-                                          {item.attended && item.timestamp && (
-                                            <span className="text-[8.5px] text-gray-400">
-                                              {(() => {
-                                                try {
-                                                  const d = new Date(item.timestamp);
-                                                  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                                } catch (_) {
-                                                  return "";
-                                                }
-                                              })()}
+                                <div className="flex gap-1 bg-gray-150/60 p-0.5 rounded-lg text-[10px] font-bold">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAttendanceFilterTab("all")
+                                    }
+                                    className={`flex-1 py-1 rounded-md text-center transition ${
+                                      attendanceFilterTab === "all"
+                                        ? "bg-white text-gray-800 shadow-2xs font-extrabold"
+                                        : "text-gray-500 hover:text-gray-950"
+                                    }`}
+                                  >
+                                    All ({list.length})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAttendanceFilterTab("on_time")
+                                    }
+                                    className={`flex-1 py-1 rounded-md text-center transition ${
+                                      attendanceFilterTab === "on_time"
+                                        ? "bg-white text-emerald-700 shadow-2xs font-extrabold"
+                                        : "text-gray-500 hover:text-gray-950"
+                                    }`}
+                                  >
+                                    On Time ({onTimeList.length})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAttendanceFilterTab("late")
+                                    }
+                                    className={`flex-1 py-1 rounded-md text-center transition ${
+                                      attendanceFilterTab === "late"
+                                        ? "bg-white text-amber-700 shadow-2xs font-extrabold"
+                                        : "text-gray-500 hover:text-gray-950"
+                                    }`}
+                                  >
+                                    Late ({lateList.length})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setAttendanceFilterTab("absent")
+                                    }
+                                    className={`flex-1 py-1 rounded-md text-center transition ${
+                                      attendanceFilterTab === "absent"
+                                        ? "bg-white text-rose-600 shadow-2xs font-extrabold"
+                                        : "text-gray-500 hover:text-gray-950"
+                                    }`}
+                                  >
+                                    Absent ({absentList.length})
+                                  </button>
+                                </div>
+
+                                <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
+                                  {displayedList.length === 0 ? (
+                                    <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
+                                      No records match this filter.
+                                    </div>
+                                  ) : (
+                                    displayedList.map((item: any) => {
+                                      const initials = (
+                                        item.fullName ||
+                                        item.username ||
+                                        "U"
+                                      )
+                                        .split(" ")
+                                        .map((n: string) => n[0])
+                                        .join("")
+                                        .substring(0, 2)
+                                        .toUpperCase();
+
+                                      return (
+                                        <div
+                                          key={item.id}
+                                          className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <div
+                                              className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                                                item.attended
+                                                  ? "bg-[#4B5E40] text-white"
+                                                  : "bg-gray-200 text-gray-600"
+                                              }`}
+                                            >
+                                              {initials}
+                                            </div>
+                                            <div className="min-w-0">
+                                              <div className="font-extrabold text-[11px] text-gray-800 truncate">
+                                                {item.fullName}
+                                              </div>
+                                              <div className="text-[9px] text-gray-400 truncate">
+                                                @{item.username} • {item.track}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                            <span
+                                              className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
+                                                item.status === "Attended" ||
+                                                item.status === "on time" ||
+                                                item.status ===
+                                                  "Attended On Time"
+                                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                  : item.status === "Late" ||
+                                                      item.status ===
+                                                        "Attended Late"
+                                                    ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                    : "bg-rose-50 text-rose-700 border-rose-200"
+                                              }`}
+                                            >
+                                              {item.status}
                                             </span>
-                                          )}
+                                            {item.attended &&
+                                              item.timestamp && (
+                                                <span className="text-[8.5px] text-gray-400">
+                                                  {(() => {
+                                                    try {
+                                                      const d = new Date(
+                                                        item.timestamp,
+                                                      );
+                                                      return d.toLocaleTimeString(
+                                                        [],
+                                                        {
+                                                          hour: "2-digit",
+                                                          minute: "2-digit",
+                                                        },
+                                                      );
+                                                    } catch (_) {
+                                                      return "";
+                                                    }
+                                                  })()}
+                                                </span>
+                                              )}
+                                          </div>
                                         </div>
-                                      </div>
-                                    );
-                                  })
-                                )}
+                                      );
+                                    })
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })()}
+                            );
+                          })()}
                       </div>
                     ))}
                   </div>
@@ -6129,603 +7361,930 @@ export default function AdminPanel({
               })()}
             </div>
 
-          {/* ARCHIVED & COMPLETED MEETINGS REPOSITORY */}
-          <div className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs transition-all duration-200" id="archived-meetings-repository">
-            <div 
-              className="flex items-center justify-between cursor-pointer select-none group"
-              onClick={() => setIsArchiveRepoExpanded(!isArchiveRepoExpanded)}
+            {/* ARCHIVED & COMPLETED MEETINGS REPOSITORY */}
+            <div
+              className="bg-white rounded-2xl border border-gray-150 p-5 shadow-xs transition-all duration-200"
+              id="archived-meetings-repository"
             >
-              <div className="space-y-1 pr-4">
-                <h3 className="font-extrabold text-sm text-[#4B5E40] leading-normal flex items-center gap-2 group-hover:text-[#3d4d34] transition-colors">
-                  <span>📁 Archived & Completed Meetings Repository</span>
-                </h3>
-                <p className="text-xs text-gray-500">
-                  Historical database of meetings that have completed or been manually archived. These records retain all full meeting details, attendance logs, and reports, and remain available for export.
-                </p>
+              <div
+                className="flex items-center justify-between cursor-pointer select-none group"
+                onClick={() => setIsArchiveRepoExpanded(!isArchiveRepoExpanded)}
+              >
+                <div className="space-y-1 pr-4">
+                  <h3 className="font-extrabold text-sm text-[#4B5E40] leading-normal flex items-center gap-2 group-hover:text-[#3d4d34] transition-colors">
+                    <span>📁 Archived & Completed Meetings Repository</span>
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Historical database of meetings that have completed or been
+                    manually archived. These records retain all full meeting
+                    details, attendance logs, and reports, and remain available
+                    for export.
+                  </p>
+                </div>
+                <div className="text-gray-400 group-hover:text-gray-600 transition-colors shrink-0">
+                  <ChevronDown
+                    className={`w-5 h-5 transform transition-transform duration-200 ${isArchiveRepoExpanded ? "rotate-180" : ""}`}
+                  />
+                </div>
               </div>
-              <div className="text-gray-400 group-hover:text-gray-600 transition-colors shrink-0">
-                <ChevronDown className={`w-5 h-5 transform transition-transform duration-200 ${isArchiveRepoExpanded ? "rotate-180" : ""}`} />
-              </div>
-            </div>
 
-            {isArchiveRepoExpanded && (
-              <div className="space-y-4 mt-4 pt-4 border-t border-gray-100 animate-slide-up">
-                {/* Filter controls */}
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-gray-50/50 p-3 rounded-xl border border-gray-100 text-xs font-semibold">
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wider text-gray-400">Search Meetings</label>
-                    <input
-                      type="text"
-                      placeholder="Search title, description..."
-                      value={archiveSearchText}
-                      onChange={(e) => setArchiveSearchText(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium"
-                    />
-                  </div>
+              {isArchiveRepoExpanded && (
+                <div className="space-y-4 mt-4 pt-4 border-t border-gray-100 animate-slide-up">
+                  {/* Filter controls */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-gray-50/50 p-3 rounded-xl border border-gray-100 text-xs font-semibold">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider text-gray-400">
+                        Search Meetings
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Search title, description..."
+                        value={archiveSearchText}
+                        onChange={(e) => setArchiveSearchText(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium"
+                      />
+                    </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wider text-gray-400">Filter by Date</label>
-                    <input
-                      type="date"
-                      value={archiveDateFilter}
-                      onChange={(e) => setArchiveDateFilter(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium"
-                    />
-                  </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider text-gray-400">
+                        Filter by Date
+                      </label>
+                      <input
+                        type="date"
+                        value={archiveDateFilter}
+                        onChange={(e) => setArchiveDateFilter(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium"
+                      />
+                    </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wider text-gray-400">Filter by Type</label>
-                    <select
-                      value={archiveTypeFilter}
-                      onChange={(e) => setArchiveTypeFilter(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium cursor-pointer"
-                    >
-                      <option value="">All Types</option>
-                      {state.meetingTypes && state.meetingTypes.map((type: string) => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                      <option value="Knowledge Track">Knowledge Track</option>
-                      <option value="Microservice Alignment">Microservice Alignment</option>
-                      <option value="General Alignment">General Alignment</option>
-                      <option value="Weekly Drills Sync">Weekly Drills Sync</option>
-                    </select>
-                  </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider text-gray-400">
+                        Filter by Type
+                      </label>
+                      <select
+                        value={archiveTypeFilter}
+                        onChange={(e) => setArchiveTypeFilter(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium cursor-pointer"
+                      >
+                        <option value="">All Types</option>
+                        {state.meetingTypes &&
+                          state.meetingTypes.map((type: string) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        <option value="Knowledge Track">Knowledge Track</option>
+                        <option value="Microservice Alignment">
+                          Microservice Alignment
+                        </option>
+                        <option value="General Alignment">
+                          General Alignment
+                        </option>
+                        <option value="Weekly Drills Sync">
+                          Weekly Drills Sync
+                        </option>
+                      </select>
+                    </div>
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] uppercase tracking-wider text-gray-400">Filter by Organizer</label>
-                    <select
-                      value={archiveOrganizerFilter}
-                      onChange={(e) => setArchiveOrganizerFilter(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium cursor-pointer"
-                    >
-                      <option value="">All Organizers</option>
-                      {(() => {
-                        const set = new Set<string>();
-                        set.add("Admin Team");
-                        set.add("Facilitators");
-                        set.add("Track Lead");
-                        set.add("External Speaker");
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase tracking-wider text-gray-400">
+                        Filter by Organizer
+                      </label>
+                      <select
+                        value={archiveOrganizerFilter}
+                        onChange={(e) =>
+                          setArchiveOrganizerFilter(e.target.value)
+                        }
+                        className="w-full bg-white border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#4B5E40] text-xs font-medium cursor-pointer"
+                      >
+                        <option value="">All Organizers</option>
+                        {(() => {
+                          const set = new Set<string>();
+                          set.add("Admin Team");
+                          set.add("Facilitators");
+                          set.add("Track Lead");
+                          set.add("External Speaker");
 
-                        (state.meetings || []).forEach((m: any) => {
-                          const org = String(m.organizer || m.meetingOrganizer || "").trim();
-                          if (org) {
-                            set.add(org);
-                          }
-                        });
-
-                        (state.profiles || [])
-                          .filter(
-                            (p: any) =>
-                              p.role === "admin" ||
-                              p.learningLevel?.toLowerCase() === "admin" ||
-                              p.learningLevel?.toLowerCase() === "mentor" ||
-                              p.learningLevel?.toLowerCase() === "administrative mentor"
-                          )
-                          .forEach((p: any) => {
-                            const name = String(p.fullName || "").trim();
-                            if (name) {
-                              set.add(name);
+                          (state.meetings || []).forEach((m: any) => {
+                            const org = String(
+                              m.organizer || m.meetingOrganizer || "",
+                            ).trim();
+                            if (org) {
+                              set.add(org);
                             }
                           });
 
-                        return Array.from(set)
-                          .sort((a, b) => a.localeCompare(b))
-                          .map((name) => (
-                            <option key={name} value={name}>
-                              {name}
-                            </option>
-                          ));
-                      })()}
-                    </select>
+                          (state.profiles || [])
+                            .filter(
+                              (p: any) =>
+                                p.role === "admin" ||
+                                p.learningLevel?.toLowerCase() === "admin" ||
+                                p.learningLevel?.toLowerCase() === "mentor" ||
+                                p.learningLevel?.toLowerCase() ===
+                                  "administrative mentor",
+                            )
+                            .forEach((p: any) => {
+                              const name = String(p.fullName || "").trim();
+                              if (name) {
+                                set.add(name);
+                              }
+                            });
+
+                          return Array.from(set)
+                            .sort((a, b) => a.localeCompare(b))
+                            .map((name) => (
+                              <option key={name} value={name}>
+                                {name}
+                              </option>
+                            ));
+                        })()}
+                      </select>
+                    </div>
                   </div>
-                </div>
 
-                {/* Reset Filter Button */}
-                {(archiveSearchText || archiveDateFilter || archiveTypeFilter || archiveOrganizerFilter) && (
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setArchiveSearchText("");
-                        setArchiveDateFilter("");
-                        setArchiveTypeFilter("");
-                        setArchiveOrganizerFilter("");
-                      }}
-                      className="text-[11px] text-rose-600 font-extrabold hover:underline cursor-pointer"
-                    >
-                      Clear Filters &times;
-                    </button>
-                  </div>
-                )}
+                  {/* Reset Filter Button */}
+                  {(archiveSearchText ||
+                    archiveDateFilter ||
+                    archiveTypeFilter ||
+                    archiveOrganizerFilter) && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArchiveSearchText("");
+                          setArchiveDateFilter("");
+                          setArchiveTypeFilter("");
+                          setArchiveOrganizerFilter("");
+                        }}
+                        className="text-[11px] text-rose-600 font-extrabold hover:underline cursor-pointer"
+                      >
+                        Clear Filters &times;
+                      </button>
+                    </div>
+                  )}
 
-                {/* List of Archived/Completed Meetings */}
-                <div className="space-y-3">
-                  {(() => {
-                    const archived = (state.meetings || []).filter((m: any) => {
-                      const statusLower = String(m.status || "").trim().toLowerCase();
-                      if (statusLower !== "archived" && statusLower !== "completed") return false;
+                  {/* List of Archived/Completed Meetings */}
+                  <div className="space-y-3">
+                    {(() => {
+                      const archived = (state.meetings || []).filter(
+                        (m: any) => {
+                          const statusLower = String(m.status || "")
+                            .trim()
+                            .toLowerCase();
+                          if (
+                            statusLower !== "archived" &&
+                            statusLower !== "completed"
+                          )
+                            return false;
 
-                      // Search text
-                      if (archiveSearchText) {
-                        const search = archiveSearchText.toLowerCase();
-                        const matchTitle = String(m.title || "").toLowerCase().includes(search);
-                        const matchDesc = String(m.description || "").toLowerCase().includes(search);
-                        if (!matchTitle && !matchDesc) return false;
-                      }
+                          // Search text
+                          if (archiveSearchText) {
+                            const search = archiveSearchText.toLowerCase();
+                            const matchTitle = String(m.title || "")
+                              .toLowerCase()
+                              .includes(search);
+                            const matchDesc = String(m.description || "")
+                              .toLowerCase()
+                              .includes(search);
+                            if (!matchTitle && !matchDesc) return false;
+                          }
 
-                      // Date filter
-                      if (archiveDateFilter) {
-                        const hasMatchDate = m.occurrenceDate === archiveDateFilter || 
-                          (m.meetingDates && Array.isArray(m.meetingDates) && m.meetingDates.includes(archiveDateFilter));
-                        if (!hasMatchDate) return false;
-                      }
+                          // Date filter
+                          if (archiveDateFilter) {
+                            const hasMatchDate =
+                              m.occurrenceDate === archiveDateFilter ||
+                              (m.meetingDates &&
+                                Array.isArray(m.meetingDates) &&
+                                m.meetingDates.includes(archiveDateFilter));
+                            if (!hasMatchDate) return false;
+                          }
 
-                      // Type filter
-                      if (archiveTypeFilter && String(m.type || "").toLowerCase() !== archiveTypeFilter.toLowerCase()) {
-                        return false;
-                      }
+                          // Type filter
+                          if (
+                            archiveTypeFilter &&
+                            String(m.type || "").toLowerCase() !==
+                              archiveTypeFilter.toLowerCase()
+                          ) {
+                            return false;
+                          }
 
-                      // Organizer filter
-                      if (archiveOrganizerFilter && String(m.organizer || m.meetingOrganizer || "Admin Team").toLowerCase() !== archiveOrganizerFilter.toLowerCase()) {
-                        return false;
-                      }
+                          // Organizer filter
+                          if (
+                            archiveOrganizerFilter &&
+                            String(
+                              m.organizer || m.meetingOrganizer || "Admin Team",
+                            ).toLowerCase() !==
+                              archiveOrganizerFilter.toLowerCase()
+                          ) {
+                            return false;
+                          }
 
-                      return true;
-                    });
-
-                    if (archived.length === 0) {
-                      return (
-                        <div className="py-8 text-center text-gray-450 text-xs font-medium bg-gray-50/50 rounded-xl border border-dashed">
-                          No archived or completed meetings match the filters.
-                        </div>
+                          return true;
+                        },
                       );
-                    }
 
-                    // Export all filtered archived CSV function
-                    const exportFilteredToCSV = () => {
-                      const headers = ["ID", "Title", "Type", "Organizer", "Scheduled Date", "Time", "Duration", "Status"];
-                      const rows = archived.map(m => [
-                        m.id,
-                        m.title,
-                        m.type,
-                        m.organizer || "Admin Team",
-                        m.occurrenceDate || (m.meetingDates && m.meetingDates[0]) || "N/A",
-                        m.timeString || m.time || "N/A",
-                        m.duration || "N/A",
-                        m.status || "N/A"
-                      ]);
-
-                      const csvContent = "data:text/csv;charset=utf-8," 
-                        + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-                      
-                      const encodedUri = encodeURI(csvContent);
-                      const link = document.createElement("a");
-                      link.setAttribute("href", encodedUri);
-                      link.setAttribute("download", `archived_meetings_report_${getLagosDateString(new Date())}.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    };
-
-                    return (
-                      <div className="space-y-3">
-                        <div className="flex flex-wrap gap-2 justify-between items-center pb-2 bg-gray-50/70 p-3 rounded-xl border border-gray-150">
-                          <div className="flex items-center gap-3">
-                            <span className="text-[11px] text-gray-600 font-extrabold">
-                              Showing {archived.length} archived records
-                            </span>
-                            {archived.length > 2 && (
-                              <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const container = document.getElementById("archive-meetings-grid-container");
-                                    if (container) container.scrollTo({ top: 0, behavior: "smooth" });
-                                  }}
-                                  className="p-1 px-2 text-[#4B5E40] hover:bg-[#4B5E40]/10 hover:text-[#3d4d34] rounded-lg border border-[#4B5E40]/15 bg-white transition cursor-pointer flex items-center gap-1 shadow-2xs font-extrabold text-[10px]"
-                                  title="Scroll to Top"
-                                >
-                                  <ArrowUp className="w-3 h-3" />
-                                  <span>Top</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const container = document.getElementById("archive-meetings-grid-container");
-                                    if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-                                  }}
-                                  className="p-1 px-2 text-[#4B5E40] hover:bg-[#4B5E40]/10 hover:text-[#3d4d34] rounded-lg border border-[#4B5E40]/15 bg-white transition cursor-pointer flex items-center gap-1 shadow-2xs font-extrabold text-[10px]"
-                                  title="Scroll to Bottom"
-                                >
-                                  <ArrowDown className="w-3 h-3" />
-                                  <span>Bottom</span>
-                                </button>
-                              </div>
-                            )}
+                      if (archived.length === 0) {
+                        return (
+                          <div className="py-8 text-center text-gray-450 text-xs font-medium bg-gray-50/50 rounded-xl border border-dashed">
+                            No archived or completed meetings match the filters.
                           </div>
-                          
-                          <button
-                            type="button"
-                            onClick={exportFilteredToCSV}
-                            className="px-2.5 py-1 text-[10px] font-extrabold bg-[#4B5E40] text-white hover:bg-[#3d4d34] rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
-                          >
-                            📥 Export Filtered Report (CSV)
-                          </button>
-                        </div>
+                        );
+                      }
 
-                        <div 
-                          id="archive-meetings-grid-container" 
-                          className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-2 scroll-smooth"
-                        >
-                          {archived.map((meeting: any) => {
-                            const mDate = meeting.occurrenceDate || (meeting.meetingDates && meeting.meetingDates[0]) || "N/A";
-                            const isCompleted = String(meeting.status || "").toLowerCase() === "completed";
+                      // Export all filtered archived CSV function
+                      const exportFilteredToCSV = () => {
+                        const headers = [
+                          "ID",
+                          "Title",
+                          "Type",
+                          "Organizer",
+                          "Scheduled Date",
+                          "Time",
+                          "Duration",
+                          "Status",
+                        ];
+                        const rows = archived.map((m) => [
+                          m.id,
+                          m.title,
+                          m.type,
+                          m.organizer || "Admin Team",
+                          m.occurrenceDate ||
+                            (m.meetingDates && m.meetingDates[0]) ||
+                            "N/A",
+                          m.timeString || m.time || "N/A",
+                          m.duration || "N/A",
+                          m.status || "N/A",
+                        ]);
 
-                            return (
-                              <div
-                                key={meeting.id}
-                                className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-150 flex flex-col justify-between gap-3 text-xs"
-                              >
-                                <div className="space-y-1.5">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-black text-gray-800 text-[12.5px] truncate max-w-[70%]">
-                                      {meeting.title}
-                                    </span>
-                                    <span className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full border ${
-                                      isCompleted 
-                                        ? "bg-emerald-50 text-emerald-700 border-emerald-150" 
-                                        : "bg-gray-100 text-gray-600 border-gray-200"
-                                    }`}>
-                                      {meeting.status}
-                                    </span>
-                                  </div>
+                        const csvContent =
+                          "data:text/csv;charset=utf-8," +
+                          [
+                            headers.join(","),
+                            ...rows.map((e) =>
+                              e
+                                .map(
+                                  (val) =>
+                                    `"${String(val).replace(/"/g, '""')}"`,
+                                )
+                                .join(","),
+                            ),
+                          ].join("\n");
 
-                                  <p className="text-[11px] text-gray-500 font-medium line-clamp-2">
-                                    {meeting.description || "No description provided."}
-                                  </p>
+                        const encodedUri = encodeURI(csvContent);
+                        const link = document.createElement("a");
+                        link.setAttribute("href", encodedUri);
+                        link.setAttribute(
+                          "download",
+                          `archived_meetings_report_${getLagosDateString(new Date())}.csv`,
+                        );
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      };
 
-                                  <div className="grid grid-cols-2 gap-1.5 text-[10.5px] font-medium text-gray-600 pt-1">
-                                    <div>📅 {mDate}</div>
-                                    <div>🕒 {meeting.timeString || meeting.time || "N/A"}</div>
-                                    <div>⏳ {meeting.duration || "30 minutes"}</div>
-                                    <div>👤 {meeting.organizer || "Admin Team"}</div>
-                                  </div>
-                                </div>
-
-                                <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                      return (
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap gap-2 justify-between items-center pb-2 bg-gray-50/70 p-3 rounded-xl border border-gray-150">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[11px] text-gray-600 font-extrabold">
+                                Showing {archived.length} archived records
+                              </span>
+                              {archived.length > 2 && (
+                                <div className="flex items-center gap-2 border-l border-gray-200 pl-3">
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (expandedAttendanceMeetingId === meeting.id) {
-                                        setExpandedAttendanceMeetingId(null);
-                                      } else {
-                                        setExpandedAttendanceMeetingId(meeting.id);
-                                        setAttendanceFilterTab("all");
-                                      }
+                                      const container = document.getElementById(
+                                        "archive-meetings-grid-container",
+                                      );
+                                      if (container)
+                                        container.scrollTo({
+                                          top: 0,
+                                          behavior: "smooth",
+                                        });
                                     }}
-                                    className={`px-2.5 py-1 text-[10.5px] font-bold rounded-lg transition cursor-pointer ${
-                                      expandedAttendanceMeetingId === meeting.id
-                                        ? "bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold shadow-sm"
-                                        : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100"
-                                    }`}
+                                    className="p-1 px-2 text-[#4B5E40] hover:bg-[#4B5E40]/10 hover:text-[#3d4d34] rounded-lg border border-[#4B5E40]/15 bg-white transition cursor-pointer flex items-center gap-1 shadow-2xs font-extrabold text-[10px]"
+                                    title="Scroll to Top"
                                   >
-                                    {expandedAttendanceMeetingId === meeting.id
-                                      ? "Close Attendance 📊"
-                                      : "View Attendance & Report 📊"}
+                                    <ArrowUp className="w-3 h-3" />
+                                    <span>Top</span>
                                   </button>
-
-                                  {/* Single record CSV export */}
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      const attLogs = (state.attendance || []).filter((a: any) => isMatchingLogForMeeting(a, meeting));
-                                      const eligibleMa = (state.meetingAssignments || []).filter((a: any) => a.meetingId === meeting.id);
-                                      const eligibleUids = eligibleMa.map((a: any) => a.userId);
-                                      const eligibleProfs = (state.profiles || []).filter((p: any) => p.role !== "admin" && (
-                                        eligibleUids.includes(p.id) ||
-                                        isUserEligibleForMeetingInBackend(p, meeting, state.meetingAssignments || []) ||
-                                        attLogs.some((a: any) => isMatchingLogForMeetingAndUser(a, meeting, p))
-                                      ));
-
-                                      const headers = ["User ID", "Full Name", "Username", "Track", "Status", "Timestamp"];
-                                      const rows = eligibleProfs.map((p: any) => {
-                                        const userLogs = attLogs.filter((l: any) => isMatchingLogForMeetingAndUser(l, meeting, p));
-                                        const log = userLogs.find((l: any) => {
-                                          const s = (l.status || "").toLowerCase();
-                                          return !s.includes("miss") && !s.includes("absent");
-                                        }) || userLogs[0];
-                                        return [
-                                          p.id,
-                                          p.fullName || "",
-                                          p.username || "",
-                                          p.track || "General",
-                                          log ? log.status : "Absent",
-                                          log ? log.timestamp : "N/A"
-                                        ];
-                                      });
-
-                                      const csvContent = "data:text/csv;charset=utf-8," 
-                                        + [headers.join(","), ...rows.map(e => e.map(val => `"${String(val).replace(/"/g, '""')}"`).join(","))].join("\n");
-                                      
-                                      const encodedUri = encodeURI(csvContent);
-                                      const link = document.createElement("a");
-                                      link.setAttribute("href", encodedUri);
-                                      link.setAttribute("download", `meeting_attendance_${meeting.title.replace(/\s+/g, '_')}.csv`);
-                                      document.body.appendChild(link);
-                                      link.click();
-                                      document.body.removeChild(link);
+                                      const container = document.getElementById(
+                                        "archive-meetings-grid-container",
+                                      );
+                                      if (container)
+                                        container.scrollTo({
+                                          top: container.scrollHeight,
+                                          behavior: "smooth",
+                                        });
                                     }}
-                                    className="px-2 py-1 text-[10.5px] font-bold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition cursor-pointer"
+                                    className="p-1 px-2 text-[#4B5E40] hover:bg-[#4B5E40]/10 hover:text-[#3d4d34] rounded-lg border border-[#4B5E40]/15 bg-white transition cursor-pointer flex items-center gap-1 shadow-2xs font-extrabold text-[10px]"
+                                    title="Scroll to Bottom"
                                   >
-                                    Export Meeting CSV
+                                    <ArrowDown className="w-3 h-3" />
+                                    <span>Bottom</span>
                                   </button>
                                 </div>
+                              )}
+                            </div>
 
-                                {/* Attendance Tracker expanded drawer */}
-                                {expandedAttendanceMeetingId === meeting.id && (() => {
-                                  const eligibleAssignments = (state.meetingAssignments || []).filter(
-                                    (a: any) => a.meetingId === meeting.id
-                                  );
-                                  const eligibleUserIds = eligibleAssignments.map((a: any) => a.userId);
-                                  
-                                  const eligibleProfiles = (state.profiles || []).filter(
-                                    (p: any) => p.role !== "admin" && (
-                                      eligibleUserIds.includes(p.id) ||
-                                      isUserEligibleForMeetingInBackend(p, meeting, state.meetingAssignments || []) ||
-                                      (state.attendance || []).some((a: any) => isMatchingLogForMeetingAndUser(a, meeting, p))
-                                    )
-                                  );
-                                  const attendanceLogs = (state.attendance || []).filter(
-                                    (a: any) => isMatchingLogForMeeting(a, meeting)
-                                  );
-                                  
-                                  const onTimeList: any[] = [];
-                                  const lateList: any[] = [];
-                                  const absentList: any[] = [];
-
-                                  eligibleProfiles.forEach((p: any) => {
-                                    const userLogs = attendanceLogs.filter((l: any) => isMatchingLogForMeetingAndUser(l, meeting, p));
-                                    const log = userLogs.find((l: any) => {
-                                      const s = (l.status || "").toLowerCase();
-                                      return !s.includes("miss") && !s.includes("absent");
-                                    }) || userLogs[0];
-                                    const baseItem = {
-                                      id: p.id,
-                                      fullName: p.fullName,
-                                      username: p.username,
-                                      learningLevel: p.learningLevel || p.techExperience || "Apprentice level 1",
-                                      track: p.track || "General",
-                                      attended: !!(log && !(log.status || "").toLowerCase().includes("miss") && !(log.status || "").toLowerCase().includes("absent")),
-                                      timestamp: log ? log.timestamp : null
-                                    };
-
-                                    if (!log) {
-                                      absentList.push({ ...baseItem, status: "Absent" });
-                                    } else {
-                                      const s = (log.status || "").toLowerCase();
-                                      if (s.includes("late")) {
-                                        lateList.push({ ...baseItem, status: "Attended Late" });
-                                      } else if (s.includes("miss") || s.includes("absent")) {
-                                        absentList.push({ ...baseItem, status: "Absent" });
-                                      } else {
-                                        onTimeList.push({ ...baseItem, status: "Attended On Time" });
-                                      }
-                                    }
-                                  });
-
-                                  const list = [...onTimeList, ...lateList, ...absentList];
-
-                                  const displayedList = 
-                                    attendanceFilterTab === "on_time" 
-                                      ? onTimeList 
-                                      : attendanceFilterTab === "late" 
-                                        ? lateList 
-                                        : attendanceFilterTab === "absent" 
-                                          ? absentList 
-                                          : list;
-
-                                  const rawRate = list.length > 0 
-                                    ? ((onTimeList.length + lateList.length) / list.length) * 100 
-                                    : 0;
-                                  const attendanceRate = rawRate % 1 === 0 ? rawRate.toFixed(0) : rawRate.toFixed(1);
-
-                                  return (
-                                    <div className="mt-3 p-3 bg-white border border-gray-150 rounded-xl space-y-3 animate-slide-up text-left">
-                                      <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                                        <div className="space-y-0.5">
-                                          <h5 className="font-extrabold text-[11px] text-gray-800">Attendance Report</h5>
-                                          <p className="text-[10px] text-gray-400">Total assigned: {list.length} trainees</p>
-                                        </div>
-                                        <div className="text-right">
-                                          <div className="font-black text-sm text-[#4B5E40]">{attendanceRate}%</div>
-                                          <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Attendance Rate</div>
-                                        </div>
-                                      </div>
-
-                                      <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
-                                        <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
-                                          <div className="text-[8px] uppercase font-bold text-gray-400">Rate</div>
-                                          <div className="text-xs font-black text-[#4B5E40]">{attendanceRate}%</div>
-                                        </div>
-                                        <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
-                                          <div className="text-[8px] uppercase font-bold text-emerald-600">On Time</div>
-                                          <div className="text-xs font-black text-emerald-700">{onTimeList.length}</div>
-                                        </div>
-                                        <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
-                                          <div className="text-[8px] uppercase font-bold text-amber-600">Late</div>
-                                          <div className="text-xs font-black text-amber-700">{lateList.length}</div>
-                                        </div>
-                                        <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
-                                          <div className="text-[8px] uppercase font-bold text-rose-500">Absent</div>
-                                          <div className="text-xs font-black text-rose-700">{absentList.length}</div>
-                                        </div>
-                                      </div>
-
-                                      {/* Filter tabs */}
-                                      <div className="flex bg-gray-50 border border-gray-100 p-0.5 rounded-lg text-[10px] font-extrabold">
-                                        <button
-                                          type="button"
-                                          onClick={() => setAttendanceFilterTab("all")}
-                                          className={`flex-1 py-1 rounded-md text-center transition ${
-                                            attendanceFilterTab === "all"
-                                              ? "bg-white text-gray-850 shadow-2xs font-black"
-                                              : "text-gray-500 hover:text-gray-950"
-                                          }`}
-                                        >
-                                          All ({list.length})
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setAttendanceFilterTab("on_time")}
-                                          className={`flex-1 py-1 rounded-md text-center transition ${
-                                            attendanceFilterTab === "on_time"
-                                              ? "bg-white text-emerald-700 shadow-2xs font-black"
-                                              : "text-gray-500 hover:text-gray-950"
-                                          }`}
-                                        >
-                                          On Time ({onTimeList.length})
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setAttendanceFilterTab("late")}
-                                          className={`flex-1 py-1 rounded-md text-center transition ${
-                                            attendanceFilterTab === "late"
-                                              ? "bg-white text-amber-700 shadow-2xs font-black"
-                                              : "text-gray-500 hover:text-gray-950"
-                                          }`}
-                                        >
-                                          Late ({lateList.length})
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setAttendanceFilterTab("absent")}
-                                          className={`flex-1 py-1 rounded-md text-center transition ${
-                                            attendanceFilterTab === "absent"
-                                              ? "bg-white text-rose-600 shadow-2xs font-black"
-                                              : "text-gray-500 hover:text-gray-950"
-                                          }`}
-                                        >
-                                          Absent ({absentList.length})
-                                        </button>
-                                      </div>
-
-                                      {/* Display List */}
-                                      <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
-                                        {displayedList.length === 0 ? (
-                                          <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
-                                            No records match this filter.
-                                          </div>
-                                        ) : (
-                                          displayedList.map((item: any) => {
-                                            const initials = (item.fullName || item.username || "U")
-                                              .split(" ")
-                                              .map((n: string) => n[0])
-                                              .join("")
-                                              .substring(0, 2)
-                                              .toUpperCase();
-
-                                            return (
-                                              <div 
-                                                key={item.id}
-                                                className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
-                                              >
-                                                <div className="flex items-center gap-1.5 min-w-0">
-                                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
-                                                    item.attended 
-                                                      ? "bg-[#4B5E40] text-white" 
-                                                      : "bg-gray-200 text-gray-600"
-                                                  }`}>
-                                                    {initials}
-                                                  </div>
-                                                  <div className="min-w-0">
-                                                    <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                      {item.fullName}
-                                                    </div>
-                                                    <div className="text-[9px] text-gray-400 truncate">
-                                                      @{item.username} • {item.track}
-                                                    </div>
-                                                  </div>
-                                                </div>
-
-                                                <div className="flex flex-col items-end shrink-0 gap-0.5">
-                                                  <span className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
-                                                    item.status === "Attended" || item.status === "on time" || item.status === "Attended On Time"
-                                                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                      : item.status === "Late" || item.status === "Attended Late"
-                                                        ? "bg-amber-50 text-amber-700 border-amber-200"
-                                                        : "bg-rose-50 text-rose-700 border-rose-200"
-                                                  }`}>
-                                                    {item.status}
-                                                  </span>
-                                                  {item.attended && item.timestamp && (
-                                                    <span className="text-[8.5px] text-gray-400">
-                                                      {(() => {
-                                                        try {
-                                                          const d = new Date(item.timestamp);
-                                                          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                                        } catch (_) {
-                                                          return "";
-                                                        }
-                                                      })()}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            );
-                                          })
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            );
-                          })}
-                        </div>
-
-                        {archived.length > 2 && (
-                          <div className="flex justify-center pt-2 border-t border-gray-100 mt-2">
                             <button
                               type="button"
-                              onClick={() => {
-                                const container = document.getElementById("archive-meetings-grid-container");
-                                if (container) container.scrollTo({ top: 0, behavior: "smooth" });
-                              }}
-                              className="px-3.5 py-1.5 text-[10px] font-black bg-white hover:bg-gray-50 text-[#4B5E40] border border-gray-200 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                              onClick={exportFilteredToCSV}
+                              className="px-2.5 py-1 text-[10px] font-extrabold bg-[#4B5E40] text-white hover:bg-[#3d4d34] rounded-lg transition shadow-xs cursor-pointer flex items-center gap-1"
                             >
-                              <ArrowUp className="w-3.5 h-3.5" /> Back to Top of Repository
+                              📥 Export Filtered Report (CSV)
                             </button>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+
+                          <div
+                            id="archive-meetings-grid-container"
+                            className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-2 scroll-smooth"
+                          >
+                            {archived.map((meeting: any) => {
+                              const mDate =
+                                meeting.occurrenceDate ||
+                                (meeting.meetingDates &&
+                                  meeting.meetingDates[0]) ||
+                                "N/A";
+                              const isCompleted =
+                                String(meeting.status || "").toLowerCase() ===
+                                "completed";
+
+                              return (
+                                <div
+                                  key={meeting.id}
+                                  className="p-3.5 bg-gray-50/70 rounded-xl border border-gray-150 flex flex-col justify-between gap-3 text-xs"
+                                >
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-black text-gray-800 text-[12.5px] truncate max-w-[70%]">
+                                        {meeting.title}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 text-[9px] font-black uppercase tracking-wider rounded-full border ${
+                                          isCompleted
+                                            ? "bg-emerald-50 text-emerald-700 border-emerald-150"
+                                            : "bg-gray-100 text-gray-600 border-gray-200"
+                                        }`}
+                                      >
+                                        {meeting.status}
+                                      </span>
+                                    </div>
+
+                                    <p className="text-[11px] text-gray-500 font-medium line-clamp-2">
+                                      {meeting.description ||
+                                        "No description provided."}
+                                    </p>
+
+                                    <div className="grid grid-cols-2 gap-1.5 text-[10.5px] font-medium text-gray-600 pt-1">
+                                      <div>📅 {mDate}</div>
+                                      <div>
+                                        🕒{" "}
+                                        {meeting.timeString ||
+                                          meeting.time ||
+                                          "N/A"}
+                                      </div>
+                                      <div>
+                                        ⏳ {meeting.duration || "30 minutes"}
+                                      </div>
+                                      <div>
+                                        👤 {meeting.organizer || "Admin Team"}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                          if (
+                                            expandedAttendanceMeetingId ===
+                                            meeting.id
+                                          ) {
+                                            setExpandedAttendanceMeetingId(null);
+                                          } else {
+                                            setExpandedAttendanceMeetingId(
+                                              meeting.id,
+                                            );
+                                            setAttendanceFilterTab("all");
+                                          }
+                                        }}
+                                      className={`px-2.5 py-1 text-[10.5px] font-bold rounded-lg transition cursor-pointer ${
+                                        expandedAttendanceMeetingId ===
+                                        meeting.id
+                                          ? "bg-emerald-600 text-white hover:bg-emerald-700 font-extrabold shadow-sm"
+                                          : "bg-emerald-50 text-emerald-700 border border-emerald-100 hover:bg-emerald-100"
+                                      }`}
+                                    >
+                                      {expandedAttendanceMeetingId ===
+                                      meeting.id
+                                        ? "Close Attendance 📊"
+                                        : "View Attendance & Report 📊"}
+                                    </button>
+
+                                    {/* Single record CSV export */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const attLogs = (
+                                          state.attendance || []
+                                        ).filter((a: any) =>
+                                          isMatchingLogForMeeting(a, meeting),
+                                        );
+                                        const eligibleMa = (
+                                          state.meetingAssignments || []
+                                        ).filter(
+                                          (a: any) =>
+                                            a.meetingId === meeting.id,
+                                        );
+                                        const eligibleUids = eligibleMa.map(
+                                          (a: any) => a.userId,
+                                        );
+                                        const eligibleProfs = (
+                                          state.profiles || []
+                                        ).filter(
+                                          (p: any) =>
+                                            p.role !== "admin" &&
+                                            (eligibleUids.includes(p.id) ||
+                                              isUserEligibleForMeetingInBackend(
+                                                p,
+                                                meeting,
+                                                state.meetingAssignments || [],
+                                              ) ||
+                                              attLogs.some((a: any) =>
+                                                isMatchingLogForMeetingAndUser(
+                                                  a,
+                                                  meeting,
+                                                  p,
+                                                ),
+                                              )),
+                                        );
+
+                                        const headers = [
+                                          "User ID",
+                                          "Full Name",
+                                          "Username",
+                                          "Track",
+                                          "Status",
+                                          "Timestamp",
+                                        ];
+                                        const rows = eligibleProfs.map(
+                                          (p: any) => {
+                                            const userLogs = attLogs.filter(
+                                              (l: any) =>
+                                                isMatchingLogForMeetingAndUser(
+                                                  l,
+                                                  meeting,
+                                                  p,
+                                                ),
+                                            );
+                                            const log =
+                                              userLogs.find((l: any) => {
+                                                const s = (
+                                                  l.status || ""
+                                                ).toLowerCase();
+                                                return (
+                                                  !s.includes("miss") &&
+                                                  !s.includes("absent")
+                                                );
+                                              }) || userLogs[0];
+                                            return [
+                                              p.id,
+                                              p.fullName || "",
+                                              p.username || "",
+                                              p.track || "General",
+                                              log ? log.status : "Absent",
+                                              log ? log.timestamp : "N/A",
+                                            ];
+                                          },
+                                        );
+
+                                        const csvContent =
+                                          "data:text/csv;charset=utf-8," +
+                                          [
+                                            headers.join(","),
+                                            ...rows.map((e) =>
+                                              e
+                                                .map(
+                                                  (val) =>
+                                                    `"${String(val).replace(/"/g, '""')}"`,
+                                                )
+                                                .join(","),
+                                            ),
+                                          ].join("\n");
+
+                                        const encodedUri =
+                                          encodeURI(csvContent);
+                                        const link =
+                                          document.createElement("a");
+                                        link.setAttribute("href", encodedUri);
+                                        link.setAttribute(
+                                          "download",
+                                          `meeting_attendance_${meeting.title.replace(/\s+/g, "_")}.csv`,
+                                        );
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                      }}
+                                      className="px-2 py-1 text-[10.5px] font-bold text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition cursor-pointer"
+                                    >
+                                      Export Meeting CSV
+                                    </button>
+                                  </div>
+
+                                  {/* Attendance Tracker expanded drawer */}
+                                  {expandedAttendanceMeetingId === meeting.id &&
+                                    (() => {
+                                      const eligibleAssignments = (
+                                        state.meetingAssignments || []
+                                      ).filter(
+                                        (a: any) => a.meetingId === meeting.id,
+                                      );
+                                      const eligibleUserIds =
+                                        eligibleAssignments.map(
+                                          (a: any) => a.userId,
+                                        );
+
+                                      const eligibleProfiles = (
+                                        state.profiles || []
+                                      ).filter(
+                                        (p: any) =>
+                                          p.role !== "admin" &&
+                                          (eligibleUserIds.includes(p.id) ||
+                                            isUserEligibleForMeetingInBackend(
+                                              p,
+                                              meeting,
+                                              state.meetingAssignments || [],
+                                            ) ||
+                                            (state.attendance || []).some(
+                                              (a: any) =>
+                                                isMatchingLogForMeetingAndUser(
+                                                  a,
+                                                  meeting,
+                                                  p,
+                                                ),
+                                            )),
+                                      );
+                                      const attendanceLogs = (
+                                        state.attendance || []
+                                      ).filter((a: any) =>
+                                        isMatchingLogForMeeting(a, meeting),
+                                      );
+
+                                      const onTimeList: any[] = [];
+                                      const lateList: any[] = [];
+                                      const absentList: any[] = [];
+
+                                      eligibleProfiles.forEach((p: any) => {
+                                        const userLogs = attendanceLogs.filter(
+                                          (l: any) =>
+                                            isMatchingLogForMeetingAndUser(
+                                              l,
+                                              meeting,
+                                              p,
+                                            ),
+                                        );
+                                        const log =
+                                          userLogs.find((l: any) => {
+                                            const s = (
+                                              l.status || ""
+                                            ).toLowerCase();
+                                            return (
+                                              !s.includes("miss") &&
+                                              !s.includes("absent")
+                                            );
+                                          }) || userLogs[0];
+                                        const baseItem = {
+                                          id: p.id,
+                                          fullName: p.fullName,
+                                          username: p.username,
+                                          learningLevel:
+                                            p.learningLevel ||
+                                            p.techExperience ||
+                                            "Apprentice level 1",
+                                          track: p.track || "General",
+                                          attended: !!(
+                                            log &&
+                                            !(log.status || "")
+                                              .toLowerCase()
+                                              .includes("miss") &&
+                                            !(log.status || "")
+                                              .toLowerCase()
+                                              .includes("absent")
+                                          ),
+                                          timestamp: log ? log.timestamp : null,
+                                        };
+
+                                        if (!log) {
+                                          absentList.push({
+                                            ...baseItem,
+                                            status: "Absent",
+                                          });
+                                        } else {
+                                          const s = (
+                                            log.status || ""
+                                          ).toLowerCase();
+                                          if (s.includes("late")) {
+                                            lateList.push({
+                                              ...baseItem,
+                                              status: "Attended Late",
+                                            });
+                                          } else if (
+                                            s.includes("miss") ||
+                                            s.includes("absent")
+                                          ) {
+                                            absentList.push({
+                                              ...baseItem,
+                                              status: "Absent",
+                                            });
+                                          } else {
+                                            onTimeList.push({
+                                              ...baseItem,
+                                              status: "Attended On Time",
+                                            });
+                                          }
+                                        }
+                                      });
+
+                                      const list = [
+                                        ...onTimeList,
+                                        ...lateList,
+                                        ...absentList,
+                                      ];
+
+                                      const displayedList =
+                                        attendanceFilterTab === "on_time"
+                                          ? onTimeList
+                                          : attendanceFilterTab === "late"
+                                            ? lateList
+                                            : attendanceFilterTab === "absent"
+                                              ? absentList
+                                              : list;
+
+                                      const rawRate =
+                                        list.length > 0
+                                          ? ((onTimeList.length +
+                                              lateList.length) /
+                                              list.length) *
+                                            100
+                                          : 0;
+                                      const attendanceRate =
+                                        rawRate % 1 === 0
+                                          ? rawRate.toFixed(0)
+                                          : rawRate.toFixed(1);
+
+                                      return (
+                                        <div className="mt-3 p-3 bg-white border border-gray-150 rounded-xl space-y-3 animate-slide-up text-left">
+                                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                            <div className="space-y-0.5">
+                                              <h5 className="font-extrabold text-[11px] text-gray-800">
+                                                Attendance Report
+                                              </h5>
+                                              <p className="text-[10px] text-gray-400">
+                                                Total assigned: {list.length}{" "}
+                                                trainees
+                                              </p>
+                                            </div>
+                                            <div className="text-right">
+                                              <div className="font-black text-sm text-[#4B5E40]">
+                                                {attendanceRate}%
+                                              </div>
+                                              <div className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">
+                                                Attendance Rate
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-4 gap-1.5 text-center text-xs">
+                                            <div className="bg-[#4B5E40]/5 p-1.5 rounded-lg border border-[#4B5E40]/10">
+                                              <div className="text-[8px] uppercase font-bold text-gray-400">
+                                                Rate
+                                              </div>
+                                              <div className="text-xs font-black text-[#4B5E40]">
+                                                {attendanceRate}%
+                                              </div>
+                                            </div>
+                                            <div className="bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
+                                              <div className="text-[8px] uppercase font-bold text-emerald-600">
+                                                On Time
+                                              </div>
+                                              <div className="text-xs font-black text-emerald-700">
+                                                {onTimeList.length}
+                                              </div>
+                                            </div>
+                                            <div className="bg-amber-50 p-1.5 rounded-lg border border-amber-100">
+                                              <div className="text-[8px] uppercase font-bold text-amber-600">
+                                                Late
+                                              </div>
+                                              <div className="text-xs font-black text-amber-700">
+                                                {lateList.length}
+                                              </div>
+                                            </div>
+                                            <div className="bg-rose-50 p-1.5 rounded-lg border border-rose-100">
+                                              <div className="text-[8px] uppercase font-bold text-rose-500">
+                                                Absent
+                                              </div>
+                                              <div className="text-xs font-black text-rose-700">
+                                                {absentList.length}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Filter tabs */}
+                                          <div className="flex bg-gray-50 border border-gray-100 p-0.5 rounded-lg text-[10px] font-extrabold">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setAttendanceFilterTab("all")
+                                              }
+                                              className={`flex-1 py-1 rounded-md text-center transition ${
+                                                attendanceFilterTab === "all"
+                                                  ? "bg-white text-gray-850 shadow-2xs font-black"
+                                                  : "text-gray-500 hover:text-gray-950"
+                                              }`}
+                                            >
+                                              All ({list.length})
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setAttendanceFilterTab(
+                                                  "on_time",
+                                                )
+                                              }
+                                              className={`flex-1 py-1 rounded-md text-center transition ${
+                                                attendanceFilterTab ===
+                                                "on_time"
+                                                  ? "bg-white text-emerald-700 shadow-2xs font-black"
+                                                  : "text-gray-500 hover:text-gray-950"
+                                              }`}
+                                            >
+                                              On Time ({onTimeList.length})
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setAttendanceFilterTab("late")
+                                              }
+                                              className={`flex-1 py-1 rounded-md text-center transition ${
+                                                attendanceFilterTab === "late"
+                                                  ? "bg-white text-amber-700 shadow-2xs font-black"
+                                                  : "text-gray-500 hover:text-gray-950"
+                                              }`}
+                                            >
+                                              Late ({lateList.length})
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setAttendanceFilterTab("absent")
+                                              }
+                                              className={`flex-1 py-1 rounded-md text-center transition ${
+                                                attendanceFilterTab === "absent"
+                                                  ? "bg-white text-rose-600 shadow-2xs font-black"
+                                                  : "text-gray-500 hover:text-gray-950"
+                                              }`}
+                                            >
+                                              Absent ({absentList.length})
+                                            </button>
+                                          </div>
+
+                                          {/* Display List */}
+                                          <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
+                                            {displayedList.length === 0 ? (
+                                              <div className="text-center py-4 text-gray-400 text-[10px] font-medium italic">
+                                                No records match this filter.
+                                              </div>
+                                            ) : (
+                                              displayedList.map((item: any) => {
+                                                const initials = (
+                                                  item.fullName ||
+                                                  item.username ||
+                                                  "U"
+                                                )
+                                                  .split(" ")
+                                                  .map((n: string) => n[0])
+                                                  .join("")
+                                                  .substring(0, 2)
+                                                  .toUpperCase();
+
+                                                return (
+                                                  <div
+                                                    key={item.id}
+                                                    className="flex items-center justify-between p-1.5 hover:bg-gray-55 rounded-lg border border-gray-150 bg-white transition gap-2"
+                                                  >
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                      <div
+                                                        className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black shrink-0 ${
+                                                          item.attended
+                                                            ? "bg-[#4B5E40] text-white"
+                                                            : "bg-gray-200 text-gray-600"
+                                                        }`}
+                                                      >
+                                                        {initials}
+                                                      </div>
+                                                      <div className="min-w-0">
+                                                        <div className="font-extrabold text-[11px] text-gray-800 truncate">
+                                                          {item.fullName}
+                                                        </div>
+                                                        <div className="text-[9px] text-gray-400 truncate">
+                                                          @{item.username} •{" "}
+                                                          {item.track}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+
+                                                    <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                                      <span
+                                                        className={`px-1.5 py-0.5 text-[8.5px] font-extrabold rounded-md border tracking-wide uppercase ${
+                                                          item.status ===
+                                                            "Attended" ||
+                                                          item.status ===
+                                                            "on time" ||
+                                                          item.status ===
+                                                            "Attended On Time"
+                                                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                            : item.status ===
+                                                                  "Late" ||
+                                                                item.status ===
+                                                                  "Attended Late"
+                                                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                              : "bg-rose-50 text-rose-700 border-rose-200"
+                                                        }`}
+                                                      >
+                                                        {item.status}
+                                                      </span>
+                                                      {item.attended &&
+                                                        item.timestamp && (
+                                                          <span className="text-[8.5px] text-gray-400">
+                                                            {(() => {
+                                                              try {
+                                                                const d =
+                                                                  new Date(
+                                                                    item.timestamp,
+                                                                  );
+                                                                return d.toLocaleTimeString(
+                                                                  [],
+                                                                  {
+                                                                    hour: "2-digit",
+                                                                    minute:
+                                                                      "2-digit",
+                                                                  },
+                                                                );
+                                                              } catch (_) {
+                                                                return "";
+                                                              }
+                                                            })()}
+                                                          </span>
+                                                        )}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {archived.length > 2 && (
+                            <div className="flex justify-center pt-2 border-t border-gray-100 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const container = document.getElementById(
+                                    "archive-meetings-grid-container",
+                                  );
+                                  if (container)
+                                    container.scrollTo({
+                                      top: 0,
+                                      behavior: "smooth",
+                                    });
+                                }}
+                                className="px-3.5 py-1.5 text-[10px] font-black bg-white hover:bg-gray-50 text-[#4B5E40] border border-gray-200 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" /> Back to Top
+                                of Repository
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* C. DRILLS PUBLISHING & GRADING BOARD */}
@@ -7113,7 +8672,8 @@ export default function AdminPanel({
                 Corporate Directory Synchronisation
               </h3>
               <p className="text-xs text-gray-500 max-w-sm mx-auto leading-relaxed">
-                Connect and synchronize newly created and updated meetings from the Bincom Corporate Server database.
+                Connect and synchronize newly created and updated meetings from
+                the Bincom Corporate Server database.
               </p>
             </div>
 
@@ -7131,14 +8691,20 @@ export default function AdminPanel({
                 <button
                   id="admin-toggle-midnight-sync"
                   type="button"
-                  onClick={() => handleToggleMidnightSync(!state.autoMidnightSyncEnabled)}
+                  onClick={() =>
+                    handleToggleMidnightSync(!state.autoMidnightSyncEnabled)
+                  }
                   className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                    state.autoMidnightSyncEnabled ? "bg-[#4B5E40]" : "bg-gray-300"
+                    state.autoMidnightSyncEnabled
+                      ? "bg-[#4B5E40]"
+                      : "bg-gray-300"
                   }`}
                 >
                   <span
                     className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${
-                      state.autoMidnightSyncEnabled ? "translate-x-5" : "translate-x-0"
+                      state.autoMidnightSyncEnabled
+                        ? "translate-x-5"
+                        : "translate-x-0"
                     }`}
                   />
                 </button>
@@ -7257,18 +8823,21 @@ export default function AdminPanel({
               {(() => {
                 const slatedToday = (state.meetings || []).filter(
                   (m: any) =>
-                    (!m.status || m.status.trim().toLowerCase() !== "archived") &&
-                    isMeetingScheduledForToday(m)
+                    (!m.status ||
+                      m.status.trim().toLowerCase() !== "archived") &&
+                    isMeetingScheduledForToday(m),
                 );
 
                 if (slatedToday.length === 0) {
                   return (
                     <div className="p-4 rounded-xl bg-amber-50/50 border border-amber-200/60 text-center space-y-1">
                       <p className="text-xs text-amber-800 font-bold">
-                        No dynamic meetings are scheduled for today ({todayDateStr}).
+                        No dynamic meetings are scheduled for today (
+                        {todayDateStr}).
                       </p>
                       <p className="text-[10.5px] text-gray-500 font-medium">
-                        Running the overnight sync will clear active states on existing meetings to keep schedules accurate.
+                        Running the overnight sync will clear active states on
+                        existing meetings to keep schedules accurate.
                       </p>
                     </div>
                   );
@@ -7277,7 +8846,10 @@ export default function AdminPanel({
                 return (
                   <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                     <p className="text-[11px] text-gray-500 font-medium leading-relaxed">
-                      The following <strong>{slatedToday.length}</strong> meeting(s) will be automatically marked as <strong>Active</strong> and populated on eligible user calendars today:
+                      The following <strong>{slatedToday.length}</strong>{" "}
+                      meeting(s) will be automatically marked as{" "}
+                      <strong>Active</strong> and populated on eligible user
+                      calendars today:
                     </p>
                     <div className="space-y-2">
                       {slatedToday.map((meeting: any) => (
@@ -7295,14 +8867,20 @@ export default function AdminPanel({
                               </span>
                             </div>
                             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-gray-400 font-medium">
-                              <span>📁 {getMeetingTypeLabel(meeting.type)}</span>
+                              <span>
+                                📁 {getMeetingTypeLabel(meeting.type)}
+                              </span>
                               <span>•</span>
-                              <span className="truncate">🎯 Tracks: {meeting.tracks?.join(", ") || "All"}</span>
+                              <span className="truncate">
+                                🎯 Tracks: {meeting.tracks?.join(", ") || "All"}
+                              </span>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
                             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span className="text-[10px] font-bold text-emerald-700">Ready</span>
+                            <span className="text-[10px] font-bold text-emerald-700">
+                              Ready
+                            </span>
                           </div>
                         </div>
                       ))}
@@ -7339,7 +8917,10 @@ export default function AdminPanel({
                 Danger Zone: Database Fresh Start
               </h3>
               <p className="text-xs text-rose-600 max-w-sm mx-auto leading-relaxed">
-                Delete all pre-seeded mock records (meetings, projects, drills, attendance logs, and student profiles) to start with a completely fresh, empty workspace. Your admin account will be preserved.
+                Delete all pre-seeded mock records (meetings, projects, drills,
+                attendance logs, and student profiles) to start with a
+                completely fresh, empty workspace. Your admin account will be
+                preserved.
               </p>
             </div>
 
@@ -7350,7 +8931,9 @@ export default function AdminPanel({
                 disabled={purgingDb || seedingDb}
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-extrabold text-xs rounded-xl shadow transition cursor-pointer inline-flex items-center justify-center gap-1.5"
               >
-                {purgingDb ? "Purging Seed Data..." : "🗑️ Purge Seed Data & Start Fresh"}
+                {purgingDb
+                  ? "Purging Seed Data..."
+                  : "🗑️ Purge Seed Data & Start Fresh"}
               </button>
 
               <button
@@ -7359,7 +8942,9 @@ export default function AdminPanel({
                 disabled={purgingDb || seedingDb}
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-extrabold text-xs rounded-xl shadow transition cursor-pointer inline-flex items-center justify-center gap-1.5"
               >
-                {seedingDb ? "Seeding Database..." : "🌱 Seed Default Configurations"}
+                {seedingDb
+                  ? "Seeding Database..."
+                  : "🌱 Seed Default Configurations"}
               </button>
             </div>
           </div>
@@ -7367,244 +8952,347 @@ export default function AdminPanel({
       )}
 
       {/* G. SYNCHRONISATION & ERROR AUDIT LOGS (Section 4.4) */}
-      {adminTab === "sync_logs" && (() => {
-        const queuedMeetingUpdatesList = localQueuedMeetingUpdates;
-        return (
-          <div className="space-y-6 animate-fade-in" id="sync-logs-tab-root">
-            <div className="bg-white rounded-2xl border border-gray-150 p-6 space-y-5">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
-                <div>
-                  <h3 className="font-extrabold text-gray-900 text-sm sm:text-base flex items-center gap-2">
-                    <RefreshCw className="w-5 h-5 text-emerald-600 animate-spin-slow" />
-                    Synchronisation & Error Audit Logs
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    View queue status, audit immediate or midnight sync actions, and inspect errors.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setLoading(true);
-                    try {
-                      await triggerSimulatedCron();
-                      triggerSuccess("Midnight cron sync simulated successfully! Queued items processed.");
-                      onStateUpdate();
-                    } catch (err: any) {
-                      triggerError("Cron simulation failed: " + err.message);
-                    } finally {
-                      setLoading(false);
-                    }
-                  }}
-                  disabled={loading}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow cursor-pointer transition flex items-center gap-2 justify-center shrink-0"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  Simulate Midnight Sync Job
-                </button>
-              </div>
-
-              {/* STATS ROW */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-gray-50 p-4 rounded-xl border border-gray-150 text-center">
-                  <span className="block text-xs font-bold text-gray-400 uppercase tracking-wider">Total Actions</span>
-                  <span className="block text-2xl font-black text-slate-800 mt-1">{(queuedMeetingUpdatesList || []).length}</span>
-                </div>
-                <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-150 text-center">
-                  <span className="block text-xs font-bold text-amber-600 uppercase tracking-wider">Pending Queue</span>
-                  <span className="block text-2xl font-black text-amber-700 mt-1">
-                    {(queuedMeetingUpdatesList || []).filter((item: any) => item.status === "pending").length}
-                  </span>
-                </div>
-                <div className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-150 text-center">
-                  <span className="block text-xs font-bold text-emerald-600 uppercase tracking-wider">Successfully Synced</span>
-                  <span className="block text-2xl font-black text-emerald-700 mt-1">
-                    {(queuedMeetingUpdatesList || []).filter((item: any) => item.status === "synced" || item.status === "applied").length}
-                  </span>
-                </div>
-                <div className="bg-rose-50/50 p-4 rounded-xl border border-rose-150 text-center">
-                  <span className="block text-xs font-bold text-rose-600 uppercase tracking-wider">Failed Attempts</span>
-                  <span className="block text-2xl font-black text-rose-700 mt-1">
-                    {(queuedMeetingUpdatesList || []).filter((item: any) => item.status === "failed").length}
-                  </span>
-                </div>
-              </div>
-
-              {/* AUDIT LOG TABLE/LIST */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
-                  Sync Event Chronicle:
-                </h4>
-
-                {(queuedMeetingUpdatesList || []).length === 0 ? (
-                  <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl">
-                    <span className="text-2xl block mb-2">📋</span>
-                    <p className="text-xs text-gray-400 font-semibold">No sync or error logs recorded yet.</p>
-                    <p className="text-[10px] text-gray-400 mt-0.5">Logs appear here when admin creates, edits, or deletes meetings.</p>
+      {adminTab === "sync_logs" &&
+        (() => {
+          const queuedMeetingUpdatesList = localQueuedMeetingUpdates;
+          return (
+            <div className="space-y-6 animate-fade-in" id="sync-logs-tab-root">
+              <div className="bg-white rounded-2xl border border-gray-150 p-6 space-y-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                  <div>
+                    <h3 className="font-extrabold text-gray-900 text-sm sm:text-base flex items-center gap-2">
+                      <RefreshCw className="w-5 h-5 text-emerald-600 animate-spin-slow" />
+                      Synchronisation & Error Audit Logs
+                    </h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      View queue status, audit immediate or midnight sync
+                      actions, and inspect errors.
+                    </p>
                   </div>
-                ) : (
-                  <div className="overflow-x-auto border border-gray-150 rounded-xl divide-y divide-gray-100">
-                    {/* Row headers */}
-                    <div className="bg-gray-50 px-4 py-2.5 grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                      <span className="col-span-3">Action Type / Meeting</span>
-                      <span className="col-span-2">Sync Schedule</span>
-                      <span className="col-span-3">Admin Initiator</span>
-                      <span className="col-span-2">Date & Time</span>
-                      <span className="col-span-2 text-right">Status</span>
-                    </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        await triggerSimulatedCron();
+                        triggerSuccess(
+                          "Midnight cron sync simulated successfully! Queued items processed.",
+                        );
+                        onStateUpdate();
+                      } catch (err: any) {
+                        triggerError("Cron simulation failed: " + err.message);
+                      } finally {
+                        setLoading(false);
+                      }
+                    }}
+                    disabled={loading}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow cursor-pointer transition flex items-center gap-2 justify-center shrink-0"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Simulate Midnight Sync Job
+                  </button>
+                </div>
 
-                    {/* Rows */}
-                    {[...queuedMeetingUpdatesList]
-                    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
-                    .map((item: any) => {
-                      const isSave = item.action === "save" || item.type === "create" || item.type === "edit";
-                      const isImmediate = item.syncOption === "immediate" || item.status === "applied";
-                      const isSynced = item.status === "synced" || item.status === "applied";
-                      
-                      return (
-                        <div key={item.id} className="px-4 py-3 grid grid-cols-12 gap-2 text-xs items-center hover:bg-gray-50/60 transition">
-                          {/* Action / Meeting info */}
-                          <div className="col-span-3 space-y-0.5">
-                            <div className="flex items-center gap-1.5">
-                              {isSave ? (
-                                <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase">Save</span>
-                              ) : (
-                                <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-rose-50 text-rose-700 rounded-md border border-rose-100 uppercase">Delete</span>
+                {/* STATS ROW */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-150 text-center">
+                    <span className="block text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      Total Actions
+                    </span>
+                    <span className="block text-2xl font-black text-slate-800 mt-1">
+                      {(queuedMeetingUpdatesList || []).length}
+                    </span>
+                  </div>
+                  <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-150 text-center">
+                    <span className="block text-xs font-bold text-amber-600 uppercase tracking-wider">
+                      Pending Queue
+                    </span>
+                    <span className="block text-2xl font-black text-amber-700 mt-1">
+                      {
+                        (queuedMeetingUpdatesList || []).filter(
+                          (item: any) => item.status === "pending",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-150 text-center">
+                    <span className="block text-xs font-bold text-emerald-600 uppercase tracking-wider">
+                      Successfully Synced
+                    </span>
+                    <span className="block text-2xl font-black text-emerald-700 mt-1">
+                      {
+                        (queuedMeetingUpdatesList || []).filter(
+                          (item: any) =>
+                            item.status === "synced" ||
+                            item.status === "applied",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                  <div className="bg-rose-50/50 p-4 rounded-xl border border-rose-150 text-center">
+                    <span className="block text-xs font-bold text-rose-600 uppercase tracking-wider">
+                      Failed Attempts
+                    </span>
+                    <span className="block text-2xl font-black text-rose-700 mt-1">
+                      {
+                        (queuedMeetingUpdatesList || []).filter(
+                          (item: any) => item.status === "failed",
+                        ).length
+                      }
+                    </span>
+                  </div>
+                </div>
+
+                {/* AUDIT LOG TABLE/LIST */}
+                <div className="space-y-3">
+                  <h4 className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
+                    Sync Event Chronicle:
+                  </h4>
+
+                  {(queuedMeetingUpdatesList || []).length === 0 ? (
+                    <div className="text-center py-12 border border-dashed border-gray-200 rounded-xl">
+                      <span className="text-2xl block mb-2">📋</span>
+                      <p className="text-xs text-gray-400 font-semibold">
+                        No sync or error logs recorded yet.
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        Logs appear here when admin creates, edits, or deletes
+                        meetings.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-gray-150 rounded-xl divide-y divide-gray-100">
+                      {/* Row headers */}
+                      <div className="bg-gray-50 px-4 py-2.5 grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                        <span className="col-span-3">
+                          Action Type / Meeting
+                        </span>
+                        <span className="col-span-2">Sync Schedule</span>
+                        <span className="col-span-3">Admin Initiator</span>
+                        <span className="col-span-2">Date & Time</span>
+                        <span className="col-span-2 text-right">Status</span>
+                      </div>
+
+                      {/* Rows */}
+                      {[...queuedMeetingUpdatesList]
+                        .sort(
+                          (a, b) =>
+                            new Date(b.createdAt || 0).getTime() -
+                            new Date(a.createdAt || 0).getTime(),
+                        )
+                        .map((item: any) => {
+                          const isSave =
+                            item.action === "save" ||
+                            item.type === "create" ||
+                            item.type === "edit";
+                          const isImmediate =
+                            item.syncOption === "immediate" ||
+                            item.status === "applied";
+                          const isSynced =
+                            item.status === "synced" ||
+                            item.status === "applied";
+
+                          return (
+                            <div
+                              key={item.id}
+                              className="px-4 py-3 grid grid-cols-12 gap-2 text-xs items-center hover:bg-gray-50/60 transition"
+                            >
+                              {/* Action / Meeting info */}
+                              <div className="col-span-3 space-y-0.5">
+                                <div className="flex items-center gap-1.5">
+                                  {isSave ? (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-emerald-50 text-emerald-700 rounded-md border border-emerald-100 uppercase">
+                                      Save
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 text-[9px] font-extrabold bg-rose-50 text-rose-700 rounded-md border border-rose-100 uppercase">
+                                      Delete
+                                    </span>
+                                  )}
+                                  <span className="font-extrabold text-gray-900 truncate max-w-[120px]">
+                                    {item.meetingData?.title ||
+                                      `ID: ${item.meetingId}`}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-gray-400 font-medium">
+                                  Meeting ID: {item.meetingId}
+                                </div>
+                              </div>
+
+                              {/* Sync Schedule */}
+                              <div className="col-span-2">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${isImmediate ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}
+                                >
+                                  {isImmediate ? "⚡ Immediate" : "🌙 Midnight"}
+                                </span>
+                              </div>
+
+                              {/* Admin Initiator */}
+                              <div className="col-span-3 text-[11px] font-semibold text-slate-700 truncate">
+                                {item.adminEmail ||
+                                  item.adminId ||
+                                  "Automated/Unknown"}
+                              </div>
+
+                              {/* Date & Time */}
+                              <div className="col-span-2 space-y-0.5 text-gray-400 font-medium">
+                                <div className="text-[10.5px]">
+                                  {item.createdAt
+                                    ? new Date(
+                                        item.createdAt,
+                                      ).toLocaleDateString()
+                                    : "-"}
+                                </div>
+                                <div className="text-[9.5px]">
+                                  {item.createdAt
+                                    ? new Date(
+                                        item.createdAt,
+                                      ).toLocaleTimeString()
+                                    : "-"}
+                                </div>
+                              </div>
+
+                              {/* Status */}
+                              <div className="col-span-2 text-right">
+                                <div className="inline-flex items-center gap-1">
+                                  {isSynced && (
+                                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-100">
+                                      Synced
+                                    </span>
+                                  )}
+                                  {item.status === "pending" && (
+                                    <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-100">
+                                      Pending
+                                    </span>
+                                  )}
+                                  {item.status === "failed" && (
+                                    <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-rose-100">
+                                      Failed
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Detailed Error Block if failed */}
+                              {item.status === "failed" && item.error && (
+                                <div className="col-span-12 mt-2 bg-rose-50 border border-rose-100 rounded-lg p-2.5 text-[10.5px] font-mono text-rose-700 leading-normal space-y-1">
+                                  <div className="font-bold uppercase tracking-wide text-[9px] text-rose-500">
+                                    Error Stack Detail:
+                                  </div>
+                                  <p>{item.error}</p>
+                                </div>
                               )}
-                              <span className="font-extrabold text-gray-900 truncate max-w-[120px]">
-                                {item.meetingData?.title || `ID: ${item.meetingId}`}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+
+                {/* HISTORICAL ONBOARDING SUBMISSIONS LOG (STUDENT AUDIT TRAIL) */}
+                <div className="space-y-3 pt-6 border-t border-gray-100">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
+                        Student Onboarding Audit Trail
+                      </h4>
+                      <p className="text-[10px] text-gray-400 font-medium">
+                        Historical log of onboarding form submissions, track
+                        updates, and level resubmissions for audit compliance
+                        purposes.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!state.onboardingSubmissions ||
+                  state.onboardingSubmissions.length === 0 ? (
+                    <div className="text-center py-8 border border-dashed border-gray-200 rounded-xl">
+                      <span className="text-xl block mb-2.5">📋</span>
+                      <p className="text-xs text-gray-400 font-semibold">
+                        No onboarding form updates recorded yet.
+                      </p>
+                      <p className="text-[10px] text-gray-400 mt-0.5">
+                        When students reopen and update their onboarding
+                        details, previous forms are archived here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto border border-gray-150 rounded-xl divide-y divide-gray-100">
+                      <div className="bg-gray-50 px-4 py-2.5 grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                        <span className="col-span-3">Student Name / ID</span>
+                        <span className="col-span-3">Knowledge Track</span>
+                        <span className="col-span-2">Learning Level</span>
+                        <span className="col-span-2">
+                          Education / Experience
+                        </span>
+                        <span className="col-span-2 text-right">
+                          Submitted At
+                        </span>
+                      </div>
+
+                      {[...(state.onboardingSubmissions || [])]
+                        .sort(
+                          (a, b) =>
+                            new Date(b.timestamp || 0).getTime() -
+                            new Date(a.timestamp || 0).getTime(),
+                        )
+                        .map((item: any) => (
+                          <div
+                            key={item.id}
+                            className="px-4 py-3 grid grid-cols-12 gap-2 text-xs items-center hover:bg-gray-50/60 transition"
+                          >
+                            <div className="col-span-3 space-y-0.5">
+                              <div className="font-extrabold text-gray-900 truncate">
+                                {item.fullName}
+                              </div>
+                              <div className="text-[9.5px] text-gray-400 font-mono">
+                                User ID: {item.userId}
+                              </div>
+                            </div>
+
+                            <div className="col-span-3 font-semibold text-gray-700">
+                              {item.track}
+                            </div>
+
+                            <div className="col-span-2">
+                              <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 text-gray-700 rounded-md font-bold text-[10px]">
+                                {item.learningLevel || "Apprentice"}
                               </span>
                             </div>
-                            <div className="text-[10px] text-gray-400 font-medium">
-                              Meeting ID: {item.meetingId}
+
+                            <div className="col-span-2 text-[10.5px] text-gray-500 leading-normal">
+                              <div>{item.education}</div>
+                              <div className="text-[9.5px] text-gray-400 italic">
+                                {item.techExperience}
+                              </div>
+                            </div>
+
+                            <div className="col-span-2 text-right text-gray-400 font-medium">
+                              <div className="text-[10.5px]">
+                                {item.timestamp
+                                  ? new Date(
+                                      item.timestamp,
+                                    ).toLocaleDateString()
+                                  : "-"}
+                              </div>
+                              <div className="text-[9.5px]">
+                                {item.timestamp
+                                  ? new Date(
+                                      item.timestamp,
+                                    ).toLocaleTimeString()
+                                  : "-"}
+                              </div>
                             </div>
                           </div>
-
-                          {/* Sync Schedule */}
-                          <div className="col-span-2">
-                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${isImmediate ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
-                              {isImmediate ? "⚡ Immediate" : "🌙 Midnight"}
-                            </span>
-                          </div>
-
-                          {/* Admin Initiator */}
-                          <div className="col-span-3 text-[11px] font-semibold text-slate-700 truncate">
-                            {item.adminEmail || item.adminId || "Automated/Unknown"}
-                          </div>
-
-                          {/* Date & Time */}
-                          <div className="col-span-2 space-y-0.5 text-gray-400 font-medium">
-                            <div className="text-[10.5px]">
-                              {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "-"}
-                            </div>
-                            <div className="text-[9.5px]">
-                              {item.createdAt ? new Date(item.createdAt).toLocaleTimeString() : "-"}
-                            </div>
-                          </div>
-
-                          {/* Status */}
-                          <div className="col-span-2 text-right">
-                            <div className="inline-flex items-center gap-1">
-                              {isSynced && (
-                                <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-100">Synced</span>
-                              )}
-                              {item.status === "pending" && (
-                                <span className="text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-100">Pending</span>
-                              )}
-                              {item.status === "failed" && (
-                                <span className="text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full text-[10px] font-bold border border-rose-100">Failed</span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Detailed Error Block if failed */}
-                          {item.status === "failed" && item.error && (
-                            <div className="col-span-12 mt-2 bg-rose-50 border border-rose-100 rounded-lg p-2.5 text-[10.5px] font-mono text-rose-700 leading-normal space-y-1">
-                              <div className="font-bold uppercase tracking-wide text-[9px] text-rose-500">Error Stack Detail:</div>
-                              <p>{item.error}</p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-              )}
-            </div>
-
-            {/* HISTORICAL ONBOARDING SUBMISSIONS LOG (STUDENT AUDIT TRAIL) */}
-            <div className="space-y-3 pt-6 border-t border-gray-100">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h4 className="font-extrabold text-xs text-gray-800 uppercase tracking-wider">
-                    Student Onboarding Audit Trail
-                  </h4>
-                  <p className="text-[10px] text-gray-400 font-medium">
-                    Historical log of onboarding form submissions, track updates, and level resubmissions for audit compliance purposes.
-                  </p>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
-
-              {(!state.onboardingSubmissions || state.onboardingSubmissions.length === 0) ? (
-                <div className="text-center py-8 border border-dashed border-gray-200 rounded-xl">
-                  <span className="text-xl block mb-2.5">📋</span>
-                  <p className="text-xs text-gray-400 font-semibold">No onboarding form updates recorded yet.</p>
-                  <p className="text-[10px] text-gray-400 mt-0.5">When students reopen and update their onboarding details, previous forms are archived here.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto border border-gray-150 rounded-xl divide-y divide-gray-100">
-                  <div className="bg-gray-50 px-4 py-2.5 grid grid-cols-12 gap-2 text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    <span className="col-span-3">Student Name / ID</span>
-                    <span className="col-span-3">Knowledge Track</span>
-                    <span className="col-span-2">Learning Level</span>
-                    <span className="col-span-2">Education / Experience</span>
-                    <span className="col-span-2 text-right">Submitted At</span>
-                  </div>
-
-                  {[...(state.onboardingSubmissions || [])]
-                    .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
-                    .map((item: any) => (
-                      <div key={item.id} className="px-4 py-3 grid grid-cols-12 gap-2 text-xs items-center hover:bg-gray-50/60 transition">
-                        <div className="col-span-3 space-y-0.5">
-                          <div className="font-extrabold text-gray-900 truncate">
-                            {item.fullName}
-                          </div>
-                          <div className="text-[9.5px] text-gray-400 font-mono">
-                            User ID: {item.userId}
-                          </div>
-                        </div>
-
-                        <div className="col-span-3 font-semibold text-gray-700">
-                          {item.track}
-                        </div>
-
-                        <div className="col-span-2">
-                          <span className="px-2 py-0.5 bg-gray-100 border border-gray-200 text-gray-700 rounded-md font-bold text-[10px]">
-                            {item.learningLevel || "Apprentice"}
-                          </span>
-                        </div>
-
-                        <div className="col-span-2 text-[10.5px] text-gray-500 leading-normal">
-                          <div>{item.education}</div>
-                          <div className="text-[9.5px] text-gray-400 italic">{item.techExperience}</div>
-                        </div>
-
-                        <div className="col-span-2 text-right text-gray-400 font-medium">
-                          <div className="text-[10.5px]">
-                            {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : "-"}
-                          </div>
-                          <div className="text-[9.5px]">
-                            {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : "-"}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
             </div>
-          </div>
-        </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* F. EXPORT CSV DATA REPORTING (Section 4.2) */}
       {adminTab === "export" && (
@@ -7708,7 +9396,8 @@ export default function AdminPanel({
                       Recurrence Deletion Options:
                     </div>
                     <p className="text-[10px] text-gray-500 font-medium mb-1">
-                      This meeting is part of a recurring series. Choose how you want to apply the deletion:
+                      This meeting is part of a recurring series. Choose how you
+                      want to apply the deletion:
                     </p>
                     <label className="flex items-center gap-2 cursor-pointer py-0.5">
                       <input
@@ -7760,7 +9449,12 @@ export default function AdminPanel({
                     type="button"
                     id="confirm-delete-meeting-btn"
                     disabled={isDeletingMeeting}
-                    onClick={() => handleInitiateDelete(meetingToDeleteId, deleteRecurrenceOption)}
+                    onClick={() =>
+                      handleInitiateDelete(
+                        meetingToDeleteId,
+                        deleteRecurrenceOption,
+                      )
+                    }
                     className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none transition flex items-center gap-1.5 justify-center"
                   >
                     {isDeletingMeeting ? (
@@ -7819,11 +9513,17 @@ export default function AdminPanel({
               <div className="text-[11px] text-gray-500 font-medium leading-normal">
                 {syncModalType === "save" ? (
                   <span>
-                    🕒 {syncModalData?.timeString} | {syncModalData?.isRecurring ? "Recurring Series" : "One-Time Meeting"}
+                    🕒 {syncModalData?.timeString} |{" "}
+                    {syncModalData?.isRecurring
+                      ? "Recurring Series"
+                      : "One-Time Meeting"}
                   </span>
                 ) : (
                   <span>
-                    Mode: <strong className="text-slate-700 capitalize">{syncModalDeleteMode} occurrence(s)</strong>
+                    Mode:{" "}
+                    <strong className="text-slate-700 capitalize">
+                      {syncModalDeleteMode} occurrence(s)
+                    </strong>
                   </span>
                 )}
               </div>
@@ -7835,7 +9535,9 @@ export default function AdminPanel({
                 Select Synchronisation Schedule:
               </div>
               <div className="grid grid-cols-1 gap-2.5">
-                <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "immediate" ? "bg-emerald-50/40 border-emerald-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}>
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "immediate" ? "bg-emerald-50/40 border-emerald-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}
+                >
                   <input
                     type="radio"
                     name="sync-schedule-option"
@@ -7845,14 +9547,19 @@ export default function AdminPanel({
                     className="mt-0.5 text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
                   />
                   <div>
-                    <span className="block text-xs font-bold text-gray-900">Update Users Immediately</span>
+                    <span className="block text-xs font-bold text-gray-900">
+                      Update Users Immediately
+                    </span>
                     <span className="block text-[10px] text-gray-500 font-semibold mt-0.5 leading-relaxed">
-                      Push updates to all affected users right away. Users will see the change immediately in their Today's Meetings view.
+                      Push updates to all affected users right away. Users will
+                      see the change immediately in their Today's Meetings view.
                     </span>
                   </div>
                 </label>
 
-                <label className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "midnight" ? "bg-amber-50/30 border-amber-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}>
+                <label
+                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "midnight" ? "bg-amber-50/30 border-amber-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}
+                >
                   <input
                     type="radio"
                     name="sync-schedule-option"
@@ -7862,9 +9569,12 @@ export default function AdminPanel({
                     className="mt-0.5 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
                   />
                   <div>
-                    <span className="block text-xs font-bold text-gray-900">Update at 12:00 AM (Midnight)</span>
+                    <span className="block text-xs font-bold text-gray-900">
+                      Update at 12:00 AM (Midnight)
+                    </span>
                     <span className="block text-[10px] text-gray-500 font-semibold mt-0.5 leading-relaxed">
-                      Queue the update to be applied by the next scheduled nightly synchronization job at midnight WAT.
+                      Queue the update to be applied by the next scheduled
+                      nightly synchronization job at midnight WAT.
                     </span>
                   </div>
                 </label>
@@ -7952,7 +9662,7 @@ export default function AdminPanel({
             (m: any) =>
               m.type &&
               m.type.trim().toLowerCase() ===
-                meetingTypeToDelete.trim().toLowerCase()
+                meetingTypeToDelete.trim().toLowerCase(),
           );
           const isMeetingTypeInUse = relatedMeetings.length > 0;
 
@@ -8107,16 +9817,22 @@ export default function AdminPanel({
         >
           <div className="bg-white rounded-2xl border border-gray-150 p-6 max-w-sm w-full shadow-2xl space-y-4 relative transform scale-100 transition duration-200">
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${
-                confirmDialog.isDanger
-                  ? "bg-rose-50 text-rose-600 border-rose-100"
-                  : "bg-emerald-50 text-emerald-600 border-emerald-100"
-              }`}>
-                <span className="text-lg">{confirmDialog.isDanger ? "⚠️" : "💡"}</span>
+              <div
+                className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${
+                  confirmDialog.isDanger
+                    ? "bg-rose-50 text-rose-600 border-rose-100"
+                    : "bg-emerald-50 text-emerald-600 border-emerald-100"
+                }`}
+              >
+                <span className="text-lg">
+                  {confirmDialog.isDanger ? "⚠️" : "💡"}
+                </span>
               </div>
-              <h3 className={`font-extrabold text-sm sm:text-base leading-normal ${
-                confirmDialog.isDanger ? "text-[#991b1b]" : "text-[#4B5E40]"
-              }`}>
+              <h3
+                className={`font-extrabold text-sm sm:text-base leading-normal ${
+                  confirmDialog.isDanger ? "text-[#991b1b]" : "text-[#4B5E40]"
+                }`}
+              >
                 {confirmDialog.title}
               </h3>
             </div>
@@ -8129,7 +9845,9 @@ export default function AdminPanel({
               <button
                 type="button"
                 id="custom-confirm-cancel-btn"
-                onClick={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
+                onClick={() =>
+                  setConfirmDialog((prev) => ({ ...prev, isOpen: false }))
+                }
                 className="px-4 py-2 border border-gray-250 text-gray-600 hover:bg-gray-50 rounded-xl text-xs font-semibold cursor-pointer select-none"
               >
                 {confirmDialog.cancelText || "Cancel"}

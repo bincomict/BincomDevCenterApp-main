@@ -262,4 +262,171 @@ export interface QueuedMeetingUpdate {
   action?: "save" | "delete";
 }
 
+export type KDPresentationStatus =
+  | "Approved"
+  | "Pending Review"
+  | "Awaiting topic submission"
+  | "Rejected"
+  | "Cancelled"
+  | "Rescheduled"
+  | "Completed"
+  | "Ready for Presentation"
+  | "Draft";
+
+export interface KDPresentationHistoryEntry {
+  previousDate: string;
+  previousDayOfWeek?: string;
+  newDate: string;
+  newDayOfWeek?: string;
+  rescheduledAt: string;
+  rescheduledBy: string;
+  reason?: string;
+}
+
+export interface KDPresentationComment {
+  id: string;
+  authorUserId: string;
+  authorName: string;
+  authorRole: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface KDPresentationRating {
+  userId: string;
+  userName: string;
+  rating: number; // 1 to 5 stars (or 1 to max rating scale e.g. 10)
+  feedbackScore?: number; // 0 to 100 percentage
+  feedbackText?: string;
+  createdAt: string;
+  isAnonymous?: boolean;
+}
+
+export interface KDPresentation {
+  id: string;
+  date: string; // "YYYY-MM-DD" e.g. "2026-08-04"
+  dayOfWeek?: string; // e.g. "Tuesday", "Wednesday", "Thursday", "Friday"
+  topic?: string;
+  presenterUserId?: string;
+  presenterName: string;
+  presenterEmail?: string;
+  assignedMentorUserId?: string;
+  assignedMentorName?: string;
+  status: KDPresentationStatus;
+  notes?: string;
+  linkedMeetingId?: string;
+  meetingLink?: string;
+  submittedAt?: string;
+  updatedAt?: string;
+  // Presentation Materials fields
+  slidesUrl?: string;
+  summary?: string;
+  publicArtifactLink?: string;
+  materialsSubmittedAt?: string;
+  materialsLocked?: boolean;
+  materialsLockedBy?: string;
+  materialsLockedAt?: string;
+  history?: KDPresentationHistoryEntry[];
+  comments?: KDPresentationComment[];
+  rating?: number; // Average rating (1-5)
+  feedbackScore?: number; // Average feedback score (0-100)
+  ratings?: KDPresentationRating[];
+}
+
+export interface KDLeaderboardConfig {
+  presenterWeights: {
+    avgRatingWeight: number; // default 40
+    feedbackScoreWeight: number; // default 30
+    completedPresentationsWeight: number; // default 30
+  };
+  attendeeWeights: {
+    sessionsAttendedWeight: number; // default 40
+    onTimeAttendanceWeight: number; // default 40
+    attendancePercentageWeight: number; // default 20
+  };
+  ratingScale?: number; // default 5 (options: 5 or 10)
+  allowAnonymousFeedback?: boolean; // default true
+  lastPublishedMonth?: string; // "YYYY-MM"
+  lastPublishedAt?: string;
+}
+
+export const defaultKDLeaderboardConfig: KDLeaderboardConfig = {
+  presenterWeights: {
+    avgRatingWeight: 40,
+    feedbackScoreWeight: 30,
+    completedPresentationsWeight: 30
+  },
+  attendeeWeights: {
+    sessionsAttendedWeight: 40,
+    onTimeAttendanceWeight: 40,
+    attendancePercentageWeight: 20
+  },
+  ratingScale: 5,
+  allowAnonymousFeedback: true
+};
+
+export interface KnowledgeDevelopmentInfo {
+  title?: string;
+  about?: string;
+  purpose?: string;
+  objectives?: string;
+  whyFacilitate?: string;
+  whyAttend?: string;
+  sessionInfo?: string;
+  attendanceInfo?: string;
+  presenterInfo?: string;
+  learningProgress?: string;
+  meetingLink?: string;
+  targetSessionsPerMonth?: number;
+  compulsoryLevels?: string[];
+  config?: KDLeaderboardConfig;
+  kdLeaderboardConfig?: KDLeaderboardConfig;
+  // Legacy fields retained for backwards compatibility
+  overview?: string;
+  curriculumAndTopics?: string;
+  scheduleDetails?: string;
+  facilitatorsAndMentors?: string;
+  recommendedResources?: string;
+  lastUpdatedBy?: string;
+  lastUpdatedAt?: string;
+}
+
+export const DEFAULT_KD_COMPULSORY_LEVELS = [
+  "Apprentice level 1",
+  "Apprentice level 2",
+  "Apprentice level 3",
+  "Apprentice",
+  "Intern",
+  "Volunteer beginner level",
+  "Volunteer intermediate level",
+  "Volunteer advanced level",
+  "Trainee Level 1",
+  "Trainee Level 2",
+  "Trainee Level 3",
+  "Trainee",
+  "Global Techie 0",
+  "Global Techie 1",
+  "Global Techie Level 0",
+  "Global Techie Level 1"
+];
+
+export const defaultKnowledgeDevelopmentInfo: KnowledgeDevelopmentInfo = {
+  title: "Knowledge Development (KD) Microservice",
+  about: "Knowledge Development (KD) is a structured learning and knowledge-sharing platform within the Bincom Dev Center App that enables techies to continuously learn, share expertise, present technical topics, and broaden their knowledge across different areas of Information and Communication Technology (ICT).",
+  purpose: "• Update our knowledge on the best use of technology\n• To know something about everything\n• Help the respective participants to understand new trends in the ever-growing world of ICT\n• To help participants learn more about topics within and outside their field of expertise.",
+  objectives: "• To provide high-level of information about specific subject/topic/body of knowledge\n• Update our knowledge on the best use of technology\n• To know something about everything\n• Help the respective participants to understand new trends in the ever-growing world of ICT\n• To help participants learn more about topics within and outside their field of expertise.",
+  whyFacilitate: "• To build communication and presentation skills\n• To know at least one thing about everything in the organization\n• To learn more while obliged to facilitate, present and teach in the KD session\n• To develop pitching confidence\n• To learn the best use of technology\n• Finally, it serves as an avenue to dig deep in a certain field of interest",
+  whyAttend: "• To know at least one thing about everything in the organization\n• To further advance knowledge in certain and various field\n• To show visibility and activeness at work\n• To meet with likemind people and industry peers\n• To understand and emulate what it takes to present and share knowledge.\n• Finally it serves as an avenue to dig deep in a certain field of interest.",
+  sessionInfo: "• Knowledge Development sessions hold every Tuesday to Friday.\n• Sessions begin at 9:00 AM (WAT).\n• Sessions are conducted through the Meeting module.\n• The meeting link will be available only when a session has been scheduled.",
+  attendanceInfo: "• Attendance is compulsory for applicable Techie Levels (apprentices, interns, trainee, global techie level 0 and 1).\n• Attendance contributes to Knowledge Development KPIs.\n• Attendance is tracked automatically through the Meeting module.\n• Users cannot manually update their attendance.",
+  presenterInfo: "• Submit a presentation topic 2 weeks before your scheduled date\n• Submit presentation slides and Presentation summary 1 week before presentation date\n• Record yourself sharing screen and making your presentation prior to your real presentation\n• Share this recorded video on your socials (this is called public artefact).\n• Share public artefact, presentation summary and slides on kd channel.",
+  learningProgress: "• Users earn progress through active participation.\n• Presentation activities contribute to learning development.\n• Attendance contributes toward Knowledge Development KPIs.\n• Learning progress is tracked automatically.",
+  meetingLink: "https://meet.jit.si/BincomDevCenterKDHub",
+  targetSessionsPerMonth: 16,
+  compulsoryLevels: DEFAULT_KD_COMPULSORY_LEVELS,
+  lastUpdatedBy: "Bincom Platform Administrator",
+  lastUpdatedAt: new Date().toISOString()
+};
+
+
 

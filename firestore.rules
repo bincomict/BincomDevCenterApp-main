@@ -39,18 +39,10 @@ service cloud.firestore {
     match /profiles/{profileId} {
       allow read: if true;
       allow create: if isUnseeded() || isAdmin() || (
-        isSignedIn() && request.auth.uid == profileId && (
-          request.resource.data.role != 'admin' ||
-          request.auth.token.email.matches('(?i)^(stuncharles@gmail\\.com|hadekunleabdulwally@gmail\\.com|oluwatosinayinde\\.bincom@gmail\\.com)$') ||
-          (exists(/databases/$(database)/documents/profiles/admin-1) && get(/databases/$(database)/documents/profiles/admin-1).data.email == request.auth.token.email && get(/databases/$(database)/documents/profiles/admin-1).data.role == 'admin') ||
-          (exists(/databases/$(database)/documents/profiles/u-1782201053272) && get(/databases/$(database)/documents/profiles/u-1782201053272).data.email == request.auth.token.email && get(/databases/$(database)/documents/profiles/u-1782201053272).data.role == 'admin')
-        )
+        isSignedIn() && request.auth.uid == profileId
       );
       allow update: if isAdmin() || (
-        isSignedIn() && request.auth.uid == profileId && (
-          request.resource.data.role == resource.data.role ||
-          request.auth.token.email.matches('(?i)^(stuncharles@gmail\\.com|hadekunleabdulwally@gmail\\.com|oluwatosinayinde\\.bincom@gmail\\.com)$')
-        )
+        isSignedIn() && request.auth.uid == profileId
       );
       allow delete: if isAdmin();
     }
@@ -137,7 +129,20 @@ service cloud.firestore {
     // --- User Reminders ---
     match /reminders/{reminderId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+    }
+
+    // --- Knowledge Development Presentations ---
+    match /kdPresentations/{id} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
+    // --- Distributed Sync Locks ---
+    match /syncLocks/{id} {
+      allow read, write: if isSignedIn();
     }
 
     // --- Meeting Assignments ---

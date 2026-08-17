@@ -37,14 +37,16 @@ import {
   parseMeetingTimeToMinutes,
   getLagosDateString,
   formatMeetingDates,
-  formatExactJoinTime
+  formatExactJoinTime,
+  isKDCompulsoryForLevel,
+  getUserAssignedMicroservices
 } from "../utils/trackUtils";
 
 interface DashboardProps {
   profile: Profile;
   state: any; // Entire synced state
   onJoinMeeting: (meetingId: string) => void;
-  setActiveTab: (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin") => void;
+  setActiveTab: (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard") => void;
   setActiveSubTab: (subTab: "kd" | "standups" | "pd" | "tech" | "drills" | "social") => void;
   onStateUpdate?: () => void;
 }
@@ -828,9 +830,64 @@ export default function Dashboard({
   const microserviceMeetingsList = userAllMeetings.filter(m => m.type === "microservice");
   const projectMeetingsList = userAllMeetings.filter(m => m.type === "project");
 
+  const isMentorUser =
+    profile.role === "mentor" ||
+    profile.role === "admin" ||
+    String(profile.learningLevel || "").toLowerCase().includes("mentor") ||
+    String(profile.occupation || "").toLowerCase().includes("mentor");
+
+  const assignedServices = getUserAssignedMicroservices(profile, state.microserviceOwners);
+  const isMicroserviceOwner = assignedServices.length > 0;
+
   return (
     <div className="space-y-6 animate-fade-in" id="trainee-dashboard-view">
       
+      {/* Mentor Quick Switch Banner */}
+      {isMentorUser && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-800 font-bold flex items-center justify-center shrink-0">
+              🎓
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-amber-950">You are logged in as a Mentor</h3>
+              <p className="text-[11px] text-amber-800 font-medium">
+                Access your centralized Mentor Dashboard to view assigned tasks, review KD topics, and grade drills.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("mentor_dashboard")}
+            className="px-4 py-2 text-xs font-bold text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-xl transition cursor-pointer shrink-0 shadow-xs"
+          >
+            Switch to Mentor Dashboard →
+          </button>
+        </div>
+      )}
+
+      {/* Microservice Owner Quick Switch Banner */}
+      {isMicroserviceOwner && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-bold flex items-center justify-center shrink-0">
+              🛠️
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-emerald-950">Microservice Owner Desk Available</h3>
+              <p className="text-[11px] text-emerald-800 font-medium">
+                You manage {assignedServices.length} microservice{assignedServices.length > 1 ? "s" : ""} ({assignedServices.map(s => s.name).join(", ")}). Access operations, reviews, and reminders.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setActiveTab("microservice_dashboard")}
+            className="px-4 py-2 text-xs font-bold text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-xl transition cursor-pointer shrink-0 shadow-xs"
+          >
+            Open Microservice Desk →
+          </button>
+        </div>
+      )}
+
       {/* 1. TOP WELCOME TITLE & EMAIL */}
       <div id="welcome-dashboard-header" className="flex flex-col md:flex-row items-start md:items-end justify-between gap-3">
         <div>
@@ -944,10 +1001,25 @@ export default function Dashboard({
           <div className="space-y-8" id="my-meetings-grouped-categories">
             {/* 1. Knowledge Track Meetings */}
             <div className="space-y-3" id="dashboard-knowledge-meetings-category">
-              <h4 className="font-extrabold text-xs text-[#4B5E40] uppercase tracking-wider flex items-center gap-2 pb-1.5 border-b border-gray-100">
-                <span className="w-2 h-2 rounded-full bg-[#4B5E40]"></span>
-                Knowledge Track Meetings
-              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-gray-100">
+                <h4 className="font-extrabold text-xs text-[#4B5E40] uppercase tracking-wider flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#4B5E40]"></span>
+                  Knowledge Track Meetings
+                </h4>
+                {(() => {
+                  const userLevelVal = profile.learningLevel || profile.techExperience || "Apprentice level 1";
+                  const isComp = isKDCompulsoryForLevel(userLevelVal, state.kdInfo?.compulsoryLevels);
+                  return (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                      isComp 
+                        ? "bg-rose-100 text-rose-800 border border-rose-200" 
+                        : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    }`}>
+                      {isComp ? "Compulsory Level" : "Optional Level"} ({userLevelVal})
+                    </span>
+                  );
+                })()}
+              </div>
               {knowledgeMeetings.length === 0 ? (
                 <div className="p-4 text-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200 text-[11px] text-gray-400 font-sans">
                   No Knowledge Track meetings scheduled for you today.

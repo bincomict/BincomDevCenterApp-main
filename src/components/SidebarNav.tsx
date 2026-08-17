@@ -13,8 +13,8 @@ import {
 
 interface SidebarNavProps {
   profile: Profile;
-  activeTab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin";
-  setActiveTab: (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin") => void;
+  activeTab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard";
+  setActiveTab: (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard") => void;
   isOpen?: boolean;
   onClose?: () => void;
   adminTab?: string;
@@ -23,6 +23,7 @@ interface SidebarNavProps {
   setHubTab?: (tab: "meetings" | "history") => void;
   activeSubTab?: "kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social";
   setActiveSubTab?: (tab: "kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social") => void;
+  microserviceOwners?: Record<string, string>;
 }
 
 const adminSubTabs = [
@@ -30,7 +31,7 @@ const adminSubTabs = [
   { id: "reviews", label: "Student Validation & Reviews" },
   { id: "drills", label: "Weekly Drills" },
   { id: "meetings", label: "Meetings Management" },
-  { id: "kd_desk", label: "KD Desk" },
+  { id: "kd_desk", label: "KD Microservice" },
   { id: "pd_desk", label: "PD Desk" },
   { id: "standup_desk", label: "Standup Desk" },
   { id: "attendance_history", label: "Attendance Ledger" },
@@ -50,7 +51,7 @@ const hubSubTabs = [
 ];
 
 const microservicesSubTabs = [
-  { id: "kd", label: "📚 KD Check" },
+  { id: "kd", label: "📚 KD Microservice" },
   { id: "standups", label: "☀️ Standup Log" },
   { id: "daily-report", label: "📈 Daily Reports" },
   { id: "pd", label: "💡 PD Log" },
@@ -71,6 +72,7 @@ export default function SidebarNav({
   setHubTab,
   activeSubTab,
   setActiveSubTab,
+  microserviceOwners,
 }: SidebarNavProps) {
   const [isAdminExpanded, setIsAdminExpanded] = useState(activeTab === "admin");
   const [isMeetingsExpanded, setIsMeetingsExpanded] = useState(activeTab === "hub");
@@ -97,7 +99,22 @@ export default function SidebarNav({
         .toUpperCase()
     : "?";
 
-  const handleTabClick = (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin") => {
+  const isMentorUser =
+    profile.role === "mentor" ||
+    profile.role === "admin" ||
+    String(profile.learningLevel || "").toLowerCase().includes("mentor") ||
+    String(profile.occupation || "").toLowerCase().includes("mentor");
+
+  const isOwner = microserviceOwners && Object.values(microserviceOwners).some(
+    ownerId => ownerId && (
+      ownerId === profile.id || 
+      (profile.email && ownerId.toLowerCase() === profile.email.toLowerCase()) ||
+      (profile.fullName && ownerId.toLowerCase() === profile.fullName.toLowerCase())
+    )
+  );
+  const isMicroserviceOwnerUser = profile.role === "admin" || Boolean(isOwner);
+
+  const handleTabClick = (tab: "dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard") => {
     setActiveTab(tab);
     if (onClose) {
       onClose();
@@ -180,6 +197,38 @@ export default function SidebarNav({
           ) : (
             /* Trainee Mode: Show original Trainee navigation */
             <>
+              {isMentorUser && (
+                <div className="space-y-1">
+                  <button
+                    id="nav-mentor-dashboard-btn"
+                    onClick={() => handleTabClick("mentor_dashboard")}
+                    className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
+                      activeTab === "mentor_dashboard"
+                        ? "bg-white text-[#4B5E40] shadow font-bold"
+                        : "text-amber-200 hover:bg-white/10 hover:text-white font-semibold"
+                    }`}
+                  >
+                    <Award className="w-4 h-4 shrink-0 text-amber-300" /> 🎓 Mentor Dashboard
+                  </button>
+                </div>
+              )}
+
+              {isMicroserviceOwnerUser && (
+                <div className="space-y-1">
+                  <button
+                    id="nav-microservice-owner-dashboard-btn"
+                    onClick={() => handleTabClick("microservice_dashboard")}
+                    className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
+                      activeTab === "microservice_dashboard"
+                        ? "bg-white text-[#4B5E40] shadow font-bold"
+                        : "text-emerald-200 hover:bg-white/10 hover:text-white font-semibold"
+                    }`}
+                  >
+                    <Layers className="w-4 h-4 shrink-0 text-emerald-300" /> 🛠️ Microservice Owner Desk
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <button
                   id="nav-dashboard-btn"
@@ -332,11 +381,15 @@ export default function SidebarNav({
           )}
         </nav>
 
-        {/* Switch Button at the bottom for admins and mentors */}
+        {/* Switch Button at the bottom for admins, mentors, and microservice owners */}
         {(() => {
+          const isOwner = microserviceOwners && Object.values(microserviceOwners).some(
+            ownerId => ownerId && (ownerId === profile.id || (profile.email && ownerId.toLowerCase() === profile.email.toLowerCase()))
+          );
           const isMentorOrAdmin =
             profile.role === "admin" ||
             profile.role === "mentor" ||
+            Boolean(isOwner) ||
             String(profile.learningLevel || "").toLowerCase().includes("mentor") ||
             String(profile.learningLevel || "").toLowerCase().includes("admin");
 
