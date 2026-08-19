@@ -1,0 +1,547 @@
+import React, { useState, useEffect } from "react";
+import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment } from "./types";
+import { auth } from "./firebase";
+import { signOut } from "firebase/auth";
+import { listenToAuthChanges, subscribeToAllState, joinMeetingAttendance, dismissReminder, dismissAllReminders, onQuotaStateChanged } from "./firebaseService";
+import { seedDatabase } from "./seed";
+
+import { FEATURE_FLAGS } from "./featureFlags";
+
+// Component imports
+import AuthPage from "./components/AuthPage";
+import OnboardingForm from "./components/OnboardingForm";
+import TrackAssessment from "./components/TrackAssessment";
+import OrientationGate from "./components/OrientationGate";
+import Dashboard from "./components/Dashboard";
+import MentorDashboard from "./components/MentorDashboard";
+import MicroserviceOwnerDashboard from "./components/MicroserviceOwnerDashboard";
+import MeetingsHub from "./components/MeetingsHub";
+import MicroservicesModule from "./components/MicroservicesModule";
+import ProjectsTracker from "./components/ProjectsTracker";
+import LeaderboardPodium from "./components/LeaderboardPodium";
+import CareerPathway from "./components/CareerPathway";
+import AdminPanel from "./components/AdminPanel";
+import TopNav from "./components/TopNav";
+import SidebarNav from "./components/SidebarNav";
+import { LockedDashboardNotice } from "./components/LockedDashboardNotice";
+import { ToastContainer, toast } from "./components/Toast";
+
+// Icon imports
+import { 
+  Users, 
+  Video, 
+  MapPin, 
+  GraduationCap, 
+  LogOut, 
+  Bell, 
+  Compass, 
+  Settings, 
+  Layers, 
+  LayoutDashboard, 
+  LineChart, 
+  ShieldAlert, 
+  Sparkles,
+  Award,
+  AlertTriangle,
+  X
+} from "lucide-react";
+
+export default function App() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [quotaExhausted, setQuotaExhausted] = useState(false);
+
+  useEffect(() => {
+    const unsub = onQuotaStateChanged((exhausted) => setQuotaExhausted(exhausted));
+    return () => unsub();
+  }, []);
+  
+  // Entire server-synced database states
+  const [state, setState] = useState({
+    profiles: [] as Profile[],
+    meetings: [] as Meeting[],
+    attendance: [] as AttendanceRecord[],
+    standups: [] as any[],
+    personalDevelopment: [] as any[],
+    techUpdates: [] as any[],
+    weeklyDrills: [] as WeeklyDrill[],
+    drillSubmissions: [] as WeeklyDrillSubmission[],
+    socialLogs: [] as any[],
+    projects: [] as any[],
+    dailyReports: [] as any[],
+    kdCounts: {} as Record<string, number>,
+    reminders: [] as { id: string; userId: string; message: string; timestamp: string; read: boolean }[],
+    microserviceOwners: {} as Record<string, string>,
+    meetingAssignments: [] as MeetingAssignment[],
+    queuedMeetingUpdates: [] as any[],
+    assessmentAttempts: [] as any[],
+    onboardingSubmissions: [] as any[]
+  });
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard">(
+    FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "hub" : "dashboard"
+  );
+  const [activeSubTab, setActiveSubTab] = useState<"kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social">("kd");
+  const [adminTab, setAdminTab] = useState<
+    | "funnel"
+    | "reviews"
+    | "drills"
+    | "meetings"
+    | "reminders"
+    | "cron"
+    | "export"
+    | "owners"
+    | "levels"
+    | "kd_desk"
+    | "pd_desk"
+    | "standup_desk"
+    | "attendance_history"
+    | "tasks_config"
+    | "microservices_config"
+    | "pathways_config"
+    | "sync_logs"
+  >(FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "meetings" : "funnel");
+  const [hubTab, setHubTab] = useState<"meetings" | "history">("meetings");
+  
+  // Loading & error cues
+  const [authLoading, setAuthLoading] = useState(true);
+  const [fetching, setFetching] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // 1. Listen to Auth changes + seed DB if empty
+  useEffect(() => {
+    const unsubscribe = listenToAuthChanges((userProfile) => {
+      setProfile(userProfile);
+      if (userProfile) {
+        if (userProfile.role === "admin") {
+          setActiveTab("admin");
+          if (FEATURE_FLAGS.ENABLE_MEETINGS_ONLY) {
+            setAdminTab("meetings");
+          }
+          // Attempt automatic seed if admin is signed in (safe, skips if already seeded)
+          seedDatabase().catch(err => {
+            const isOffline = err?.message?.toLowerCase().includes("offline") || err?.code === "unavailable";
+            if (isOffline) {
+              console.warn("Auto seeding deferred: Firestore is currently offline.");
+            } else {
+              console.error("Auto seeding failed:", err);
+            }
+          });
+        } else if (
+          !FEATURE_FLAGS.ENABLE_MEETINGS_ONLY && (
+            userProfile.role === "mentor" ||
+            String(userProfile.learningLevel || "").toLowerCase().includes("mentor") ||
+            String(userProfile.occupation || "").toLowerCase().includes("mentor")
+          )
+        ) {
+          setActiveTab("mentor_dashboard");
+        } else {
+          setActiveTab(FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "hub" : "dashboard");
+        }
+      }
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Real-time Firebase State synchronization
+  useEffect(() => {
+    if (!profile) return;
+    setFetching(true);
+
+    const unsubscribe = subscribeToAllState(profile.id, profile, (compiledState) => {
+      setState(compiledState);
+      setFetching(false);
+
+      // Instantly apply state updates if Admin tweaks current user profile on the server
+      const matchedProfile = compiledState.profiles.find((p: Profile) => p.id === profile.id);
+      if (matchedProfile) {
+        if (JSON.stringify(matchedProfile) !== JSON.stringify(profile)) {
+          setProfile(matchedProfile);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [profile?.id]);
+
+  // 3. Scroll to top on navigation/status changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }, [profile?.status, activeTab, activeSubTab]);
+
+  const fetchLatestState = async () => {
+    // No-op placeholder to prevent compile breaking in other tabs, since it's now fully real-time synced!
+  };
+
+  const handleAuthSuccess = (newProfile: Profile) => {
+    setProfile(newProfile);
+    toast.success(`Welcome back, ${newProfile.fullName || newProfile.username || 'User'}!`);
+  };
+
+  const handleLogout = async () => {
+    try {
+      localStorage.removeItem("bincom_active_profile_id");
+      await signOut(auth);
+      setProfile(null);
+      toast.success("Logged out successfully.");
+    } catch (err: any) {
+      console.error("Sign out error", err);
+      toast.error("Logout failed: " + err.message);
+    }
+  };
+
+  const handleProfileSynced = (updatedProfile: Profile) => {
+    setProfile(updatedProfile);
+  };
+
+  // Mark attendance log request
+  const handleMarkAttendance = async (meetingId: string) => {
+    if (!profile) return;
+    try {
+      const status = await joinMeetingAttendance(profile.id, meetingId);
+      toast.success(`Successfully checked in! Punctuality status: ${status}`);
+    } catch (error: any) {
+      console.error("Failed to mark attendance", error);
+      toast.error("Check-in failed: " + error.message);
+    }
+  };
+
+  // Dismiss a single user reminder/notification
+  const handleDismissReminder = async (id: string) => {
+    try {
+      await dismissReminder(id);
+    } catch (e) {
+      console.error("Error dismissing reminder:", e);
+    }
+  };
+
+  // Dismiss all reminders/notifications for current user
+  const handleDismissAllReminders = async () => {
+    if (!profile) return;
+    try {
+      await dismissAllReminders(profile.id);
+    } catch (e) {
+      console.error("Error dismissing all reminders:", e);
+    }
+  };
+
+  // Smart Routing Gating Nodes based on Student status (Section 3)
+  if (authLoading) {
+    return (
+      <div className="h-screen bg-[#F8FAF8] flex flex-col items-center justify-center font-sans" id="app-loading-screen">
+        <div className="text-center space-y-5 flex flex-col items-center">
+          <div className="w-16 h-16 bg-[#4B5E40] rounded-2xl flex items-center justify-center text-white text-3xl font-black shadow-lg animate-pulse">
+            B
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-lg font-bold text-gray-800 tracking-tight">Bincom Dev Center</h3>
+            <p className="text-xs text-gray-400 font-medium tracking-wide">Synchronizing your workspace...</p>
+          </div>
+          <div className="flex items-center gap-1.5 mt-2">
+            <div className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] animate-bounce" style={{ animationDelay: "0ms" }} />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] animate-bounce" style={{ animationDelay: "150ms" }} />
+            <div className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return (
+      <>
+        <AuthPage onAuthSuccess={handleAuthSuccess} profiles={state.profiles} />
+        <ToastContainer />
+      </>
+    );
+  }
+
+  // 0. CHECK IF LEARNER DASHBOARD IS LOCKED BY MENTOR/ADMIN
+  if (profile.role === "user" && profile.isLocked) {
+    return (
+      <div className="h-screen bg-[#F8FAF8] text-gray-800 font-sans flex flex-col overflow-hidden" id="app-viewport-root">
+        <TopNav 
+          profile={profile} 
+          onLogout={handleLogout}
+          showOnboardingForm={false}
+          showAssessmentGrid={false}
+          showOrientationGate={false}
+        />
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6" id="central-locked-canvas">
+          <LockedDashboardNotice profile={profile} onProfileUpdated={() => handleProfileSynced(profile)} />
+        </div>
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // STANDARD STUDENT ONBOARDING STEPS WORKFLOW
+  const showOnboardingForm = profile.role === "user" && profile.status === "onboarding";
+  const showAssessmentGrid = profile.role === "user" && ["assessment_failed", "assessment_passed"].includes(profile.status);
+  const showOrientationGate = profile.role === "user" && profile.status === "oriented";
+
+  if (showOnboardingForm || showAssessmentGrid || showOrientationGate) {
+    return (
+      <div className="h-screen bg-[#F8FAF8] text-gray-800 font-sans flex flex-col overflow-hidden" id="app-viewport-root">
+        {/* 1. TOP HUB BANNER BAR COMPONENT */}
+        <TopNav 
+          profile={profile} 
+          onLogout={handleLogout}
+          showOnboardingForm={showOnboardingForm}
+          showAssessmentGrid={showAssessmentGrid}
+          showOrientationGate={showOrientationGate}
+        />
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6" id="central-onboarding-canvas">
+          <div className="max-w-4xl mx-auto w-full py-4">
+            {showOnboardingForm && (
+              <OnboardingForm 
+                profile={profile} 
+                onUpdateSuccess={handleProfileSynced} 
+                onNavigateToAssessment={() => handleProfileSynced({ ...profile, status: "assessment_failed" })} 
+                onboardingSubmissions={state.onboardingSubmissions}
+              />
+            )}
+
+            {showAssessmentGrid && (
+              <TrackAssessment 
+                profile={profile} 
+                onAssessmentCompleted={(updated) => handleProfileSynced(updated)} 
+                onPivotTrack={(updated) => handleProfileSynced(updated)}
+                assessmentAttempts={state.assessmentAttempts}
+              />
+            )}
+
+            {showOrientationGate && (
+              <OrientationGate 
+                profile={profile} 
+                onOrientationCleared={handleProfileSynced} 
+              />
+            )}
+          </div>
+        </div>
+        <ToastContainer />
+      </div>
+    );
+  }
+
+  // STANDARD WORKSPACE LAYOUT (SaaS Style, Full-Height Sidebar, independent scrolling pages)
+  return (
+    <div className="h-screen w-screen bg-[#F8FAF8] text-gray-800 font-sans flex overflow-hidden" id="app-viewport-root">
+      
+      {/* Left SidebarNav: Spans full height of the viewport */}
+      <SidebarNav 
+        profile={profile} 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        adminTab={adminTab}
+        setAdminTab={setAdminTab}
+        hubTab={hubTab}
+        setHubTab={setHubTab}
+        activeSubTab={activeSubTab}
+        setActiveSubTab={setActiveSubTab}
+        microserviceOwners={state.microserviceOwners}
+      />
+
+      {/* Right Column: TopNav & independent scrolling workspace page */}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden" id="app-right-column">
+        
+        {/* TopNav */}
+        <TopNav 
+          profile={profile} 
+          onLogout={handleLogout}
+          showOnboardingForm={false}
+          showAssessmentGrid={false}
+          showOrientationGate={false}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        />
+
+        {/* Quota Exceeded Banner */}
+        {quotaExhausted && (
+          <div className="bg-amber-600 text-white px-4 py-2.5 border-b border-amber-700 shrink-0 flex items-center justify-between gap-3 text-xs sm:text-sm font-medium shadow-sm z-50">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <AlertTriangle className="w-5 h-5 text-amber-200 shrink-0" />
+              <div className="truncate">
+                <span className="font-bold">Firestore Daily Free-Tier Quota Exceeded:</span> The daily read/write limit for this Firebase project was reached. Displaying local/cached data until quota resets tomorrow.
+              </div>
+            </div>
+            <a
+              href="https://console.firebase.google.com/project/ai-studio-bincomdevcenterp-bdcf743b-8150-4a11-9909-0482ce129ca9/firestore/databases/(default)/data?openUpgradeDialog=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white text-amber-900 px-3 py-1 rounded-md text-xs font-bold hover:bg-amber-50 transition shrink-0 underline decoration-amber-300"
+            >
+              Open Console
+            </a>
+          </div>
+        )}
+
+        {/* Reminders banner (under TopNav, on the right side only!) */}
+        {profile.role === "user" && state.reminders.length > 0 && (
+          <div className="bg-rose-50 border-b border-rose-150/50 py-2.5 px-4 sm:px-6 shrink-0" id="dashboard-reminders-panel">
+            <div className="max-w-7xl mx-auto flex items-start justify-between gap-4 text-rose-900 text-xs font-medium">
+              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                <Bell className="w-4.5 h-4.5 text-rose-600 shrink-0 mt-0.5 animate-bounce" />
+                <div className="flex-1 space-y-1 min-w-0">
+                  <span className="font-bold uppercase tracking-wider text-[9px] text-rose-700">Official Mentor Notifications</span>
+                  <div className="space-y-1.5 pt-0.5" id="alert-items-box">
+                    {state.reminders.map((rem) => (
+                      <div key={rem.id} className="flex items-start justify-between gap-3 bg-white/45 hover:bg-white/70 p-1.5 px-2.5 rounded-lg border border-rose-200/40 transition">
+                        <p 
+                          onClick={() => {
+                            if (rem.message.toLowerCase().includes("meeting") || rem.message.toLowerCase().includes("assign") || rem.message.toLowerCase().includes("update")) {
+                              setActiveTab("dashboard");
+                            }
+                          }}
+                          className="leading-snug flex-1 cursor-pointer hover:underline"
+                          title="Click to view on your Trainee Dashboard"
+                        >
+                          ⚠️ {rem.message}
+                        </p>
+                        <button
+                          onClick={() => handleDismissReminder(rem.id)}
+                          className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-100/55 rounded-md transition cursor-pointer shrink-0"
+                          title="Dismiss"
+                          aria-label="Dismiss notification"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              
+              <button
+                onClick={handleDismissAllReminders}
+                className="px-2.5 py-1 text-[10px] uppercase tracking-wider font-extrabold text-rose-750 bg-rose-100 hover:bg-rose-200/80 rounded-md border border-rose-200 transition cursor-pointer shrink-0"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Content Container (Independently scrolling) */}
+        <main className="flex-1 overflow-y-auto bg-[#F8FAF8] p-5 sm:p-6 flex flex-col" id="central-application-canvas">
+          <div className="flex-1">
+            <div className={`mx-auto max-w-7xl ${
+              activeTab === "dashboard" || activeTab === "mentor_dashboard"
+                ? "space-y-6" 
+                : "bg-white border border-gray-150 rounded-2xl p-5 sm:p-6 shadow-2xs"
+            }`} id="tab-canvas-panel">
+              
+              {activeTab === "mentor_dashboard" && (
+                <MentorDashboard
+                  profile={profile}
+                  state={state}
+                  onJoinMeeting={handleMarkAttendance}
+                  setActiveTab={setActiveTab}
+                  setActiveSubTab={setActiveSubTab}
+                  setAdminTab={setAdminTab}
+                  onStateUpdate={fetchLatestState}
+                />
+              )}
+
+              {activeTab === "dashboard" && (
+                <Dashboard 
+                  profile={profile}
+                  state={state}
+                  onJoinMeeting={handleMarkAttendance}
+                  setActiveTab={setActiveTab}
+                  setActiveSubTab={setActiveSubTab}
+                  onStateUpdate={fetchLatestState}
+                />
+              )}
+
+              {activeTab === "hub" && (
+                <MeetingsHub 
+                  profile={profile} 
+                  meetings={state.meetings} 
+                  attendance={state.attendance} 
+                  onJoinMeeting={handleMarkAttendance} 
+                  meetingAssignments={state.meetingAssignments}
+                  state={state}
+                  onStateUpdate={fetchLatestState}
+                  hubTab={hubTab}
+                  setHubTab={setHubTab}
+                />
+              )}
+
+              {activeTab === "microservices" && (
+                <MicroservicesModule 
+                  profile={profile} 
+                  state={state} 
+                  onStateUpdate={fetchLatestState}
+                  onJoinMeeting={handleMarkAttendance}
+                  activeSubTab={activeSubTab}
+                  onActiveSubTabChange={setActiveSubTab}
+                />
+              )}
+
+              {activeTab === "projects" && (
+                <ProjectsTracker 
+                  projects={state.projects} 
+                  profiles={state.profiles} 
+                  onJoinMeeting={handleMarkAttendance} 
+                />
+              )}
+
+              {activeTab === "leaderboard" && (
+                <LeaderboardPodium 
+                  profile={profile}
+                  profiles={state.profiles} 
+                  attendance={state.attendance} 
+                  presentations={state.kdPresentations}
+                  meetings={state.meetings}
+                  kdInfo={state.kdInfo}
+                  microserviceOwners={state.microserviceOwners}
+                  onStateUpdate={fetchLatestState}
+                />
+              )}
+
+              {activeTab === "pathway" && (
+                <CareerPathway careerPathways={state.careerPathways} />
+              )}
+
+              {activeTab === "admin" && (
+                <AdminPanel 
+                  adminProfile={profile}
+                  state={state} 
+                  onStateUpdate={fetchLatestState} 
+                  adminTab={adminTab}
+                  setAdminTab={setAdminTab}
+                />
+              )}
+
+              {activeTab === "microservice_dashboard" && (
+                <MicroserviceOwnerDashboard 
+                  profile={profile}
+                  state={state}
+                  onJoinMeeting={handleMarkAttendance}
+                  setActiveTab={setActiveTab}
+                  setActiveSubTab={setActiveSubTab}
+                  setAdminTab={setAdminTab}
+                  onStateUpdate={fetchLatestState}
+                />
+              )}
+
+            </div>
+          </div>
+
+          {/* FOOTER METRICS INFO INSIDE THE SCROLLABLE WRAPPER */}
+          <footer className="py-6 text-center text-xs text-gray-500 font-sans mt-8 border-t border-gray-100 shrink-0" id="operational-footer">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2.5">
+              <span>Bincom Dev Center Platform &copy; 2026. All rights and metrics reserved.</span>
+              <span className="font-mono text-[10px] text-gray-400">Powered by high-accountability microservices tracker algorithms.</span>
+            </div>
+          </footer>
+        </main>
+      </div>
+      <ToastContainer />
+    </div>
+  );
+}

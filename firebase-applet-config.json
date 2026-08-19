@@ -1,0 +1,12 @@
+{
+  "projectId": "bincomcenterapp",
+  "appId": "1:546715541353:web:e34332c1862fcebb9327f8",
+  "apiKey": "AIzaSyBbu3GIGwCD1T1do42nzi9qXt25vM2Blgs",
+  "authDomain": "bincomcenterapp.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket":"bincomcenterapp.firebasestorage.app",
+  "messagingSenderId": "546715541353",
+  "measurementId": "G-FVRYTPPG1C",
+  "oAuthClientId": "677385168361-hvem3msgtdih1dh7rv7abi3or4s9o39o.apps.googleusercontent.com",
+  "recaptchaSiteKey": ""
+}
