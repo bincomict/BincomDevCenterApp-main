@@ -60,6 +60,7 @@ export const auth = getAuth(app);
 function getSafeFirestoreInstance(databaseId: string | undefined) {
   try {
     return initializeFirestore(app, {
+      experimentalForceLongPolling: true,
       experimentalAutoDetectLongPolling: true,
     }, databaseId);
   } catch (e: any) {

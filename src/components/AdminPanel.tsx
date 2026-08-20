@@ -388,16 +388,25 @@ const computeRealTimeAttendanceSummary = (
     if (attendedLog) {
       const statusLower = (attendedLog.status || "").toLowerCase();
       let isLate = false;
+      let isVeryLate = false;
 
       if (joinDelta !== null) {
         if (joinDelta > 5) {
+          isVeryLate = true;
+          isLate = true;
+        } else if (joinDelta > 2) {
           isLate = true;
         }
+      } else if (statusLower.includes("very late")) {
+        isVeryLate = true;
+        isLate = true;
       } else if (statusLower.includes("late")) {
         isLate = true;
       }
 
-      if (isLate) {
+      if (isVeryLate) {
+        statusStr = "Attended Very Late";
+      } else if (isLate) {
         statusStr = "Attended Late";
       } else {
         statusStr = "Attended On Time";
@@ -415,12 +424,15 @@ const computeRealTimeAttendanceSummary = (
         } else if (joinDelta === 0) {
           timingBadge = `Exact Start`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • Exact start time`;
-        } else if (joinDelta <= 5) {
+        } else if (joinDelta <= 2) {
           timingBadge = `+${joinDelta}m (On Time)`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m into ${durationMins}m session`;
-        } else {
+        } else if (joinDelta <= 5) {
           timingBadge = `+${joinDelta}m Late`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m late (${durationMins}m session)`;
+        } else {
+          timingBadge = `+${joinDelta}m Very Late`;
+          timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m very late (${durationMins}m session)`;
         }
       } else {
         timeTrackingSubtext = `Joined at ${joinTimeDisplay}`;
@@ -456,7 +468,7 @@ const computeRealTimeAttendanceSummary = (
 
     if (!attendedLog) {
       absentList.push(item);
-    } else if (statusStr === "Attended Late") {
+    } else if (statusStr === "Attended Late" || statusStr === "Attended Very Late") {
       lateList.push(item);
     } else {
       onTimeList.push(item);
@@ -1599,6 +1611,12 @@ export default function AdminPanel({
       setLoading(false);
     }
   };
+
+
+
+
+
+
 
   // Execute Save or Delete with selected Sync Option
   const executeSyncAction = async () => {
@@ -6067,9 +6085,12 @@ export default function AdminPanel({
 
             {/* List of Meetings */}
             <div className="space-y-2.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                Currently Programmed & Scheduled Meetings (Grouped by Series)
-              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Currently Programmed & Scheduled Meetings (Grouped by Series)
+                </h4>
+
+              </div>
 
               {(() => {
                 // Group meetings by seriesId
@@ -6254,27 +6275,30 @@ export default function AdminPanel({
                             </div>
                           </div>
 
-                          <div className="flex gap-2 pt-2 border-t border-dashed border-gray-150 justify-between items-center mt-2">
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-dashed border-gray-150 justify-between items-center mt-2">
                             <span className="text-gray-500 font-bold text-[11px]">
                               Contains {series.occurrences.length} occurrences
                               total
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExpandedSeriesIds((prev) => ({
-                                  ...prev,
-                                  [series.seriesId]: !prev[series.seriesId],
-                                }));
-                              }}
-                              className="px-3 py-1.5 text-[11px] font-black text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? "Collapse Series ⬆️"
-                                  : "Expand Series ⬇️"}
-                              </span>
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedSeriesIds((prev) => ({
+                                    ...prev,
+                                    [series.seriesId]: !prev[series.seriesId],
+                                  }));
+                                }}
+                                className="px-3 py-1.5 text-[11px] font-black text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
+                              >
+                                <span>
+                                  {isExpanded
+                                    ? "Collapse Series ⬆️"
+                                    : "Expand Series ⬇️"}
+                                </span>
+                              </button>
+                            </div>
                           </div>
 
                           {/* Render sub-list of occurrences if expanded */}
@@ -6361,8 +6385,31 @@ export default function AdminPanel({
                                       ? rawRateOcc.toFixed(0)
                                       : rawRateOcc.toFixed(1);
 
-                                  const occStatus =
-                                    occurrence.status || "Upcoming";
+                                  const getOccEffectiveStatus = (occ: any) => {
+                                    const s = String(occ.status || "").trim();
+                                    const sLower = s.toLowerCase();
+                                    if (sLower === "cancelled" || sLower === "archived") return occ.status || "Upcoming";
+                                    if (sLower === "completed") return "Completed";
+
+                                    const now = new Date();
+                                    const todayStr = getLagosDateString(now);
+                                    const currentMins = getLagosMinutesPastMidnight(now);
+
+                                    const occDate = occ.occurrenceDate || (occ.meetingDates && occ.meetingDates[0]) || todayStr;
+                                    const scheduledTimeStr = occ.timeString || occ.time || "09:00 AM";
+                                    const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
+                                    const durationStr = occ.duration || "30 minutes";
+                                    const matchDuration = durationStr.match(/(\d+)/);
+                                    const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
+                                    const endTimeMinutes = scheduledMinutes + durationMinutes;
+
+                                    if (occDate < todayStr || (occDate === todayStr && currentMins >= endTimeMinutes)) {
+                                      return "Completed";
+                                    }
+                                    return occ.status || "Upcoming";
+                                  };
+
+                                  const occStatus = getOccEffectiveStatus(occurrence);
 
                                   return (
                                     <div
@@ -6558,6 +6605,7 @@ export default function AdminPanel({
                                         >
                                           ⚡ Update Immediately
                                         </button>
+
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -6814,6 +6862,11 @@ export default function AdminPanel({
                                                             item.status ===
                                                               "Attended Late"
                                                           ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                          : item.status ===
+                                                              "Very Late" ||
+                                                            item.status ===
+                                                              "Attended Very Late"
+                                                          ? "bg-orange-50 text-orange-700 border-orange-200"
                                                           : "bg-rose-50 text-rose-700 border-rose-200"
                                                     }`}
                                                   >
@@ -7039,6 +7092,7 @@ export default function AdminPanel({
                           >
                             Edit properties ✏️
                           </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -7130,16 +7184,28 @@ export default function AdminPanel({
 
                                 const statusLower = (attendedLog.status || "").toLowerCase();
                                 let isLate = false;
+                                let isVeryLate = false;
 
                                 if (joinMinutes !== null && scheduledMinutes !== null) {
                                   if (joinMinutes > scheduledMinutes + 5) {
+                                    isVeryLate = true;
+                                    isLate = true;
+                                  } else if (joinMinutes > scheduledMinutes + 2) {
                                     isLate = true;
                                   }
+                                } else if (statusLower.includes("very late")) {
+                                  isVeryLate = true;
+                                  isLate = true;
                                 } else if (statusLower.includes("late")) {
                                   isLate = true;
                                 }
 
-                                if (isLate) {
+                                if (isVeryLate) {
+                                  lateList.push({
+                                    ...baseItem,
+                                    status: "Attended Very Late",
+                                  });
+                                } else if (isLate) {
                                   lateList.push({
                                     ...baseItem,
                                     status: "Attended Late",
@@ -7348,6 +7414,10 @@ export default function AdminPanel({
                                                       item.status ===
                                                         "Attended Late"
                                                     ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                    : item.status === "Very Late" ||
+                                                      item.status ===
+                                                        "Attended Very Late"
+                                                    ? "bg-orange-50 text-orange-700 border-orange-200"
                                                     : "bg-rose-50 text-rose-700 border-rose-200"
                                               }`}
                                             >
@@ -7999,16 +8069,28 @@ export default function AdminPanel({
 
                                           const statusLower = (attendedLog.status || "").toLowerCase();
                                           let isLate = false;
+                                          let isVeryLate = false;
 
                                           if (joinMinutes !== null && scheduledMinutes !== null) {
                                             if (joinMinutes > scheduledMinutes + 5) {
+                                              isVeryLate = true;
+                                              isLate = true;
+                                            } else if (joinMinutes > scheduledMinutes + 2) {
                                               isLate = true;
                                             }
+                                          } else if (statusLower.includes("very late")) {
+                                            isVeryLate = true;
+                                            isLate = true;
                                           } else if (statusLower.includes("late")) {
                                             isLate = true;
                                           }
 
-                                          if (isLate) {
+                                          if (isVeryLate) {
+                                            lateList.push({
+                                              ...baseItem,
+                                              status: "Attended Very Late",
+                                            });
+                                          } else if (isLate) {
                                             lateList.push({
                                               ...baseItem,
                                               status: "Attended Late",
@@ -8233,6 +8315,11 @@ export default function AdminPanel({
                                                                 item.status ===
                                                                   "Attended Late"
                                                               ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                              : item.status ===
+                                                                    "Very Late" ||
+                                                                  item.status ===
+                                                                    "Attended Very Late"
+                                                              ? "bg-orange-50 text-orange-700 border-orange-200"
                                                               : "bg-rose-50 text-rose-700 border-rose-200"
                                                         }`}
                                                       >

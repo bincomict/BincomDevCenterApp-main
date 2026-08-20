@@ -92,7 +92,7 @@ export default function AttendanceHistoryTab({
     meetingDate: string;
     currentStatus: string;
   } | null>(null);
-  const [newStatusValue, setNewStatusValue] = useState<"Attended" | "Late" | "Missed">("Attended");
+  const [newStatusValue, setNewStatusValue] = useState<"Attended" | "Late" | "Very Late" | "Missed">("Attended");
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string>("");
   const [actionErrorMsg, setActionErrorMsg] = useState<string>("");
 
@@ -678,7 +678,7 @@ export default function AttendanceHistoryTab({
         {/* LATE RATE */}
         <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-amber-500">
           <span className="block text-[10px] font-extrabold text-[#d97706] uppercase tracking-wider flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> Late Rate (&gt;5m)
+            <Clock className="w-3.5 h-3.5" /> Late Rate (&gt;2m)
           </span>
           <span className="block text-xl font-extrabold text-amber-700 mt-1">
             {globalSummaryStats.latePercent.toFixed(1)}%
@@ -789,7 +789,7 @@ export default function AttendanceHistoryTab({
                             <span className="block text-[10px] font-extrabold text-emerald-600">
                               {stats.onTime} On-Time ({stats.onTimeRate.toFixed(0)}%)
                             </span>
-                            <span className="block text-[8px] text-gray-400">Checked in &lt;= 5m</span>
+                            <span className="block text-[8px] text-gray-400">Checked in &lt;= 2m</span>
                           </div>
 
                           {/* Late Rate mini indicator */}
@@ -797,7 +797,7 @@ export default function AttendanceHistoryTab({
                             <span className="block text-[10px] font-extrabold text-amber-600">
                               {stats.late} Late ({stats.lateRate.toFixed(0)}%)
                             </span>
-                            <span className="block text-[8px] text-gray-400">Checked in &gt; 5m</span>
+                            <span className="block text-[8px] text-gray-400">Checked in &gt; 2m</span>
                           </div>
 
                           {/* Missed Rate mini indicator */}
@@ -1068,6 +1068,10 @@ export default function AttendanceHistoryTab({
                                         <span className="inline-flex items-center gap-1 text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
                                           <CheckCircle className="w-3 h-3" /> On-Time ({checkInTime !== "N/A" ? checkInTime : "Logged"})
                                         </span>
+                                      ) : status === "Very Late" ? (
+                                        <span className="inline-flex items-center gap-1 text-orange-700 bg-orange-50 border border-orange-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
+                                          <Clock className="w-3 h-3" /> Very Late (Joined at {checkInTime})
+                                        </span>
                                       ) : status === "Late" ? (
                                         <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold">
                                           <Clock className="w-3 h-3" /> Late (Joined at {checkInTime})
@@ -1083,7 +1087,7 @@ export default function AttendanceHistoryTab({
                                         <button 
                                           onClick={() => {
                                             setEditingRecord({ userId: user.id, meetingId: meeting.meetingId, meetingDate: meeting.date, currentStatus: status });
-                                            setNewStatusValue(status === "Attended" ? "Attended" : (status === "Late" ? "Late" : "Missed"));
+                                            setNewStatusValue(status === "Attended" ? "Attended" : (status === "Very Late" ? "Very Late" : (status === "Late" ? "Late" : "Missed")));
                                           }}
                                           className="text-gray-400 hover:text-[#4B5E40] transition p-1"
                                           title="Correction Override"
@@ -1185,15 +1189,15 @@ export default function AttendanceHistoryTab({
                 <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">
                   Target Attendance Status
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["Attended", "Late", "Missed"] as const).map(status => (
+                <div className="grid grid-cols-4 gap-2">
+                  {(["Attended", "Late", "Very Late", "Missed"] as const).map(status => (
                     <button
                       key={status}
                       type="button"
                       onClick={() => setNewStatusValue(status)}
-                      className={`py-2 px-3.5 rounded-lg border text-center transition font-bold ${
+                      className={`py-2 px-2 rounded-lg border text-center transition font-bold text-xs ${
                         newStatusValue === status 
-                          ? (status === "Attended" ? "bg-emerald-50 border-emerald-500 text-emerald-700" : (status === "Late" ? "bg-amber-50 border-amber-500 text-amber-700" : "bg-rose-50 border-rose-500 text-rose-700"))
+                          ? (status === "Attended" ? "bg-emerald-50 border-emerald-500 text-emerald-700" : (status === "Very Late" ? "bg-orange-50 border-orange-500 text-orange-700" : (status === "Late" ? "bg-amber-50 border-amber-500 text-amber-700" : "bg-rose-50 border-rose-500 text-rose-700")))
                           : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
                       }`}
                     >

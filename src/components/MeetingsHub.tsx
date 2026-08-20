@@ -331,7 +331,7 @@ export default function MeetingsHub({
       isMatchingLogForMeetingAndUser(a, target, profile)
     );
     if (matches.length === 0) return undefined;
-    const attendedOrLate = matches.find((a) => a.status === "Attended" || a.status === "Late");
+    const attendedOrLate = matches.find((a) => a.status === "Attended" || a.status === "Late" || a.status === "Very Late");
     return attendedOrLate || matches[0];
   };
 
@@ -625,7 +625,7 @@ export default function MeetingsHub({
         dynamicMissedCount++;
       } else {
         const checkInMinutes = getMinutesInLagos(new Date(record.timestamp));
-        if (checkInMinutes <= startTimeMinutes + 5) {
+        if (checkInMinutes <= startTimeMinutes + 2) {
           dynamicOnTimeCount++;
         } else {
           dynamicLateCount++;
@@ -1337,7 +1337,7 @@ export default function MeetingsHub({
             <span className="block text-xl font-bold text-amber-500">
               {dynamicLateCount}
             </span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Late (&gt;5m)</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Late (&gt;2m)</span>
           </div>
           <div className="bg-white p-3 rounded-xl border border-gray-150">
             <span className="block text-xl font-bold text-rose-500">

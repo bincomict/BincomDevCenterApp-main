@@ -403,31 +403,18 @@ export const autoArchiveCompletedMeetings = async (
     const endTimeMinutes = scheduledMinutes + durationMinutes;
 
     let isMeetingEnded = false;
-    let isPast5MinutesAfterCompletion = false;
 
     if (latestDate < todayStr) {
       isMeetingEnded = true;
-      isPast5MinutesAfterCompletion = true;
     } else if (latestDate === todayStr) {
-      if (currentMinutes >= endTimeMinutes + 5) {
+      if (currentMinutes >= endTimeMinutes) {
         isMeetingEnded = true;
-        isPast5MinutesAfterCompletion = true;
-      } else if (currentMinutes >= endTimeMinutes) {
-        isMeetingEnded = true;
-      }
-    }
-
-    // Check if updatedAt exists on a Completed meeting and 5 minutes have passed
-    if (statusLower === "completed" && m.updatedAt) {
-      const msSinceUpdate = now.getTime() - new Date(m.updatedAt).getTime();
-      if (!isNaN(msSinceUpdate) && msSinceUpdate >= 5 * 60 * 1000) {
-        isPast5MinutesAfterCompletion = true;
       }
     }
 
     let targetStatus = m.status || "Upcoming";
-    if (isPast5MinutesAfterCompletion) {
-      targetStatus = "Archived";
+    if (statusLower === "cancelled" || statusLower === "archived") {
+      targetStatus = m.status;
     } else if (isMeetingEnded) {
       targetStatus = "Completed";
     }
@@ -1039,11 +1026,29 @@ export const subscribeToAllState = (
     };
 
     onStateUpdated(compiled);
+
+    // Auto-check for completed meetings and update status
+    if (
+      !isQuotaExhausted &&
+      compiled.meetings &&
+      compiled.meetings.length > 0 &&
+      compiled.profiles &&
+      compiled.profiles.length > 0
+    ) {
+      autoArchiveCompletedMeetings(
+        compiled.meetings,
+        compiled.profiles,
+        compiled.attendance,
+        compiled.meetingAssignments,
+        compiled.meetingHistory
+      ).catch((err) =>
+        console.error("Auto archive state check error:", err)
+      );
+    }
   };
 
   const autoArchiveCheckInterval = setInterval(() => {
     if (isQuotaExhausted) return;
-    if (!isAdmin) return;
     if (
       state.meetings &&
       state.meetings.length > 0 &&
@@ -1060,7 +1065,7 @@ export const subscribeToAllState = (
         console.error("Auto archive interval check error:", err)
       );
     }
-  }, 900000);
+  }, 60000);
 
   const checkInterval = setInterval(() => {
     if (isQuotaExhausted) {
@@ -3046,6 +3051,10 @@ export const deleteMeeting = async (
   }
 };
 
+
+
+
+
 export const submitStandup = async (standupData: any): Promise<void> => {
   await addDoc(collection(db, "standups"), {
     ...standupData,
@@ -3161,8 +3170,10 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
   const endTimeMinutes = scheduledMinutes + durationMinutes;
 
-  let status: "Attended" | "Late" | "Missed" = "Attended";
+  let status: "Attended" | "Late" | "Very Late" | "Missed" | string = "Attended";
   if (currentMinutes > scheduledMinutes + 5) {
+    status = "Very Late";
+  } else if (currentMinutes > scheduledMinutes + 2) {
     status = "Late";
   }
 
@@ -3233,7 +3244,7 @@ export const adminUpdateAttendance = async (
   targetUserId: string,
   meetingId: string,
   meetingDate: string,
-  newStatus: "Attended" | "Late" | "Missed"
+  newStatus: "Attended" | "Late" | "Very Late" | "Missed" | string
 ): Promise<void> => {
   const adminDoc = await getDoc(doc(db, "profiles", adminUserId));
   if (!adminDoc.exists() || adminDoc.data().role !== "admin") {

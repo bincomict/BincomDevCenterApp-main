@@ -159,11 +159,21 @@ export default function Dashboard({
 
   const standupDetails = getStandupDetails(profile.track);
 
-  const getAttendanceForMeeting = (meetingId: string, meetingObj?: any) => {
-    const target = meetingObj || { id: meetingId, meetingId };
+  const getAttendanceForMeeting = (meetingIdOrObj: any, meetingObj?: any) => {
+    let target: any;
+    if (typeof meetingIdOrObj === "object" && meetingIdOrObj !== null) {
+      target = meetingIdOrObj;
+    } else if (meetingObj) {
+      target = meetingObj;
+    } else {
+      target = { id: meetingIdOrObj, meetingId: meetingIdOrObj };
+    }
     const matches = (attendance || []).filter((a: any) => isMatchingLogForMeetingAndUser(a, target, profile));
     if (matches.length === 0) return undefined;
-    const attendedOrLate = matches.find((a: any) => a.status === "Attended" || a.status === "Late");
+    const attendedOrLate = matches.find((a: any) => {
+      const s = (a.status || "").toLowerCase();
+      return !s.includes("miss") && !s.includes("absent");
+    });
     return attendedOrLate || matches[0];
   };
 
@@ -697,8 +707,13 @@ export default function Dashboard({
         attendanceColor = "bg-emerald-50 text-emerald-800 border border-emerald-200";
       }
     } else {
-      attendanceText = "❌ Absent (Missed)";
-      attendanceColor = "bg-rose-50 text-rose-800 border border-rose-200";
+      if (meetingTimeStatus === "Upcoming" || meetingTimeStatus === "Live") {
+        attendanceText = "⏳ Pending Check-In";
+        attendanceColor = "bg-blue-50 text-blue-800 border border-blue-200";
+      } else {
+        attendanceText = "❌ Absent (Missed)";
+        attendanceColor = "bg-rose-50 text-rose-800 border border-rose-200";
+      }
     }
 
     return (

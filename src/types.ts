@@ -92,7 +92,7 @@ export interface AttendanceRecord {
   meetingType: MeetingType | string;
   timestamp: string; // UTC ISO String
   joinedAtTime?: string; // e.g. "02:57:12 AM WAT"
-  status: "Attended" | "Late" | "Missed";
+  status: "Attended" | "Late" | "Very Late" | "Missed" | string;
   track: string;
   meetingDate?: string; // Optional: to link to a specific date instance
   date?: string;
