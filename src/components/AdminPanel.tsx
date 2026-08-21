@@ -2104,11 +2104,11 @@ export default function AdminPanel({
   const handleDownloadCSV = () => {
     // Generate simple comma-separated columns
     const headers =
-      "AttendanceRecordID,StudentEmail,StudentName,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n";
+      "AttendanceRecordID,StudentFullName,StudentEmail,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n";
     const rows = state.attendance
       .map(
         (a) =>
-          `"${a.id}","${a.username}@bincom.co","${a.fullName}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"`,
+          `"${a.id}","${a.fullName || a.username}","${a.fullName ? `${a.fullName.toLowerCase().replace(/\s+/g, '.')}@bincom.co` : `${a.username}@bincom.co`}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"`,
       )
       .join("\n");
 
@@ -6835,11 +6835,10 @@ export default function AdminPanel({
                                                   </div>
                                                   <div className="min-w-0">
                                                     <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                      {item.fullName}
+                                                      {item.fullName || item.username}
                                                     </div>
                                                     <div className="text-[9px] text-gray-400 truncate">
-                                                      @{item.username} •{" "}
-                                                      {item.track}
+                                                      {item.track} • {item.learningLevel || "Apprentice"}
                                                     </div>
                                                   </div>
                                                 </div>
@@ -7391,10 +7390,10 @@ export default function AdminPanel({
                                             </div>
                                             <div className="min-w-0">
                                               <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                {item.fullName}
+                                                {item.fullName || item.username}
                                               </div>
                                               <div className="text-[9px] text-gray-400 truncate">
-                                                @{item.username} • {item.track}
+                                                {item.track} • {item.learningLevel || "Apprentice"}
                                               </div>
                                             </div>
                                           </div>
@@ -8288,11 +8287,10 @@ export default function AdminPanel({
                                                       </div>
                                                       <div className="min-w-0">
                                                         <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                          {item.fullName}
+                                                          {item.fullName || item.username}
                                                         </div>
                                                         <div className="text-[9px] text-gray-400 truncate">
-                                                          @{item.username} •{" "}
-                                                          {item.track}
+                                                          {item.track} • {item.learningLevel || "Apprentice"}
                                                         </div>
                                                       </div>
                                                     </div>
@@ -9424,11 +9422,11 @@ export default function AdminPanel({
               </span>
               <div>
                 {
-                  "AttendanceRecordID,StudentEmail,StudentName,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n"
+                  "AttendanceRecordID,StudentFullName,StudentEmail,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n"
                 }
                 {state.attendance.map(
                   (a) =>
-                    `"${a.id}","${a.username}@bincom.co","${a.fullName}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"\n`,
+                    `"${a.id}","${a.fullName || a.username}","${a.fullName ? `${a.fullName.toLowerCase().replace(/\s+/g, '.')}@bincom.co` : `${a.username}@bincom.co`}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"\n`,
                 )}
               </div>
             </div>

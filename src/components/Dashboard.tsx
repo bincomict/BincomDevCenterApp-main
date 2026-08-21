@@ -39,7 +39,6 @@ import {
   getLagosDateString,
   formatMeetingDates,
   formatExactJoinTime,
-  isKDCompulsoryForLevel,
   getUserAssignedMicroservices
 } from "../utils/trackUtils";
 
@@ -1051,19 +1050,6 @@ export default function Dashboard({
                   <span className="w-2 h-2 rounded-full bg-[#4B5E40]"></span>
                   Knowledge Track Meetings
                 </h4>
-                {(() => {
-                  const userLevelVal = profile.learningLevel || profile.techExperience || "Apprentice level 1";
-                  const isComp = isKDCompulsoryForLevel(userLevelVal, state.kdInfo?.compulsoryLevels);
-                  return (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      isComp 
-                        ? "bg-rose-100 text-rose-800 border border-rose-200" 
-                        : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                    }`}>
-                      {isComp ? "Compulsory Level" : "Optional Level"} ({userLevelVal})
-                    </span>
-                  );
-                })()}
               </div>
               {knowledgeMeetings.length === 0 ? (
                 <div className="p-4 text-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200 text-[11px] text-gray-400 font-sans">
@@ -1554,8 +1540,8 @@ export default function Dashboard({
                   <div className="flex items-start gap-2 text-[11.5px]">
                     <CheckCircle className="w-4.5 h-4.5 text-[#4B5E40] shrink-0 mt-0.5" />
                     <div>
-                      <strong className="text-gray-900 font-bold block">3. Orientation Compliance Video Watch</strong>
-                      <span className="text-gray-550 text-[10.5px]">Compliance watch logs certified by the automated orientation tracker.</span>
+                      <strong className="text-gray-900 font-bold block">3. Workspace Induction & Compliance</strong>
+                      <span className="text-gray-550 text-[10.5px]">Induction and policy compliance verified for student workspace access.</span>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 text-[11.5px]">

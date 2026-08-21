@@ -555,9 +555,9 @@ export default function AttendanceHistoryTab({
         csvContent += `"${b.meeting.title.replace(/"/g, '""')}","${b.meeting.type}","${b.meeting.date}","${b.meeting.scheduledStartTime}","${b.meeting.scheduledEndTime}","${b.meeting.duration}","${b.meeting.organizer}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.veryLateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
       });
     } else {
-      csvContent += `Student Name,Username,Track,Learning Level,Total Meetings,On-Time Rate (<=${lateThreshold}m) %,Late Rate (${lateThreshold}-${veryLateThreshold}m) %,Very Late Rate (>${veryLateThreshold}m) %,Missed Rate %\n`;
+      csvContent += `Student Full Name,Track,Learning Level,Total Meetings,On-Time Rate (<=${lateThreshold}m) %,Late Rate (${lateThreshold}-${veryLateThreshold}m) %,Very Late Rate (>${veryLateThreshold}m) %,Missed Rate %\n`;
       userBreakdown.forEach(b => {
-        csvContent += `"${b.user.fullName.replace(/"/g, '""')}","${b.user.username}","${b.user.track}","${b.user.learningLevel || 'Apprentice'}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.veryLateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
+        csvContent += `"${(b.user.fullName || b.user.username).replace(/"/g, '""')}","${b.user.track}","${b.user.learningLevel || 'Apprentice'}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.veryLateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
       });
     }
 
@@ -1092,8 +1092,7 @@ export default function AttendanceHistoryTab({
                     >
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-extrabold text-gray-900">{user.fullName}</span>
-                          <span className="text-[10px] text-gray-500 font-medium">@{user.username}</span>
+                          <span className="text-xs font-extrabold text-gray-900">{user.fullName || user.username}</span>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-400 font-semibold">
                           <span>🏢 Track: {user.track}</span>
@@ -1292,6 +1291,16 @@ export default function AttendanceHistoryTab({
 
             {/* Modal Body */}
             <div className="p-5 space-y-4">
+              {(() => {
+                const targetStudent = state.profiles.find(p => p.id === editingRecord.userId);
+                return (
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                    <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider block">Target Student Attendance Record</span>
+                    <span className="font-extrabold text-sm text-gray-900 block mt-0.5">{targetStudent?.fullName || targetStudent?.username || "Student"}</span>
+                    <span className="text-[10.5px] text-gray-500 font-medium block mt-0.5">{targetStudent?.track || "Tech Track"} • {targetStudent?.learningLevel || "Techie"}</span>
+                  </div>
+                );
+              })()}
               
               {/* Messages alerts */}
               {actionErrorMsg && (

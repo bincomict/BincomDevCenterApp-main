@@ -1001,7 +1001,16 @@ export const subscribeToAllState = (
     }
 
     // Filter attendance and history for users
-    let returnedAttendance = [...state.attendance];
+    let returnedAttendance = [...state.attendance].map(a => {
+      const matchProf = state.profiles.find(p => p.id === a.userId || (p.username && a.username && p.username.toLowerCase() === a.username.toLowerCase())) || (a.userId === userId ? userProfile : null);
+      const fullName = (matchProf && matchProf.fullName && matchProf.fullName.trim() !== "")
+        ? matchProf.fullName
+        : (a.fullName && a.fullName.trim() !== "" ? a.fullName : (matchProf?.username || a.username || "Student"));
+      return {
+        ...a,
+        fullName
+      };
+    });
     let returnedProfiles = [...state.profiles];
     let returnedHistory = [...state.meetingHistory];
     let returnedAuditLogs = [] as any[];

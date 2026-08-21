@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Meeting, AttendanceRecord, Profile } from "../types";
 import { Video, Clock, CheckCircle, Play, Users, Landmark, Key, Shield, XCircle, History, ChevronDown, AlertTriangle, BookOpen, Info, Plus, Calendar } from "lucide-react";
-import { getStandupDetails, getCleanTrackName, shouldShowMeetingOnDashboard, getLagosDateString, formatMeetingDates, formatExactJoinTime, isKDCompulsoryForLevel, checkIsKDOwner } from "../utils/trackUtils";
+import { getStandupDetails, getCleanTrackName, shouldShowMeetingOnDashboard, getLagosDateString, formatMeetingDates, formatExactJoinTime, checkIsKDOwner } from "../utils/trackUtils";
 import { isMatchingLogForMeetingAndUser } from "../utils/meetingUtils";
 import AttendanceHistoryTab from "./AttendanceHistoryTab";
 import KnowledgeDevelopmentInfoView from "./KnowledgeDevelopmentInfoView";
@@ -829,19 +829,6 @@ export default function MeetingsHub({
               <span className="w-2.5 h-2.5 rounded-full bg-[#4B5E40] inline-block"></span>
               Knowledge Track Meetings
             </h3>
-            {(() => {
-              const uLvl = profile.learningLevel || profile.techExperience || "Apprentice level 1";
-              const isComp = isKDCompulsoryForLevel(uLvl, state?.kdInfo?.compulsoryLevels);
-              return (
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                  isComp 
-                    ? "bg-rose-100 text-rose-800 border border-rose-200" 
-                    : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                }`}>
-                  {isComp ? "Compulsory Level" : "Optional Level"} ({uLvl})
-                </span>
-              );
-            })()}
           </div>
           <div className="flex items-center gap-2">
             {checkIsKDOwner(profile, state?.microserviceOwners, profile.role === "admin" || profile.status === "admin") && (
