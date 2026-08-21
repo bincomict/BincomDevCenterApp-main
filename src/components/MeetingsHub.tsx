@@ -613,6 +613,8 @@ export default function MeetingsHub({
   let dynamicLateCount = 0;
   let dynamicMissedCount = 0;
 
+  const lateThresh = state?.attendancePunctualityConfig?.lateThresholdMinutes ?? 2;
+
   todayMeetingsForStats.forEach((m) => {
     const record = attendance.find(a => a.userId === profile.id && a.meetingId === m.id);
     const startTimeMinutes = parseFlexibleTimeToMinutes(m.timeString);
@@ -625,7 +627,7 @@ export default function MeetingsHub({
         dynamicMissedCount++;
       } else {
         const checkInMinutes = getMinutesInLagos(new Date(record.timestamp));
-        if (checkInMinutes <= startTimeMinutes + 2) {
+        if (checkInMinutes <= startTimeMinutes + lateThresh) {
           dynamicOnTimeCount++;
         } else {
           dynamicLateCount++;
@@ -1004,22 +1006,33 @@ export default function MeetingsHub({
                         <Play className="w-2.5 h-2.5 fill-white" /> Join Stand-up
                       </button>
                     ) : (
-                      <div className="flex items-center justify-between w-full">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
-                          index.status === "Missed" 
-                            ? "bg-red-50 text-red-800 border border-red-100" 
-                            : "bg-emerald-50 text-emerald-800 border border-emerald-100"
-                        }`}>
-                          {index.status === "Missed" ? (
-                            <XCircle className="w-3.5 h-3.5 text-red-600" />
-                          ) : (
-                            <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-                          )}
-                          {index.status === "Missed" ? "Missed" : "Checked In"}
-                        </span>
-                        <span className="text-[10px] text-gray-500 font-mono font-bold">
-                          {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
-                        </span>
+                      <div className="flex flex-col gap-2 w-full">
+                        <div className="flex items-center justify-between w-full">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
+                            index.status === "Missed" 
+                              ? "bg-red-50 text-red-800 border border-red-100" 
+                              : "bg-emerald-50 text-emerald-800 border border-emerald-100"
+                          }`}>
+                            {index.status === "Missed" ? (
+                              <XCircle className="w-3.5 h-3.5 text-red-600" />
+                            ) : (
+                              <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                            )}
+                            {index.status === "Missed" ? "Missed" : "Checked In"}
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-mono font-bold">
+                            {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
+                          </span>
+                        </div>
+                        {index.status !== "Missed" && (
+                          <button
+                            id={`rejoin-btn-${p.id}`}
+                            onClick={() => handleJoinMeetingAction(p.id, p.link)}
+                            className="w-full py-1.5 bg-[#4B5E40] hover:bg-[#3d4d34] text-white text-[11px] font-black rounded-lg shadow-2xs transition active:scale-97 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Play className="w-2.5 h-2.5 fill-white" /> Rejoin Stand-up
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1160,22 +1173,33 @@ export default function MeetingsHub({
                         <Play className="w-2.5 h-2.5 fill-white" /> Join Session
                       </button>
                     ) : (
-                      <div className="flex items-center justify-between w-full">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
-                          index.status === "Missed" 
-                            ? "bg-red-50 text-red-800 border border-red-100" 
-                            : "bg-blue-50 text-blue-800 border border-blue-100"
-                        }`}>
-                          {index.status === "Missed" ? (
-                            <XCircle className="w-3.5 h-3.5 text-red-600" />
-                          ) : (
-                            <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
-                          )}
-                          {index.status === "Missed" ? "Missed" : "Checked In"}
-                        </span>
-                        <span className="text-[10px] text-gray-500 font-mono font-bold">
-                          {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
-                        </span>
+                      <div className="flex flex-col gap-2 w-full">
+                        <div className="flex items-center justify-between w-full">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
+                            index.status === "Missed" 
+                              ? "bg-red-50 text-red-800 border border-red-100" 
+                              : "bg-blue-50 text-blue-800 border border-blue-100"
+                          }`}>
+                            {index.status === "Missed" ? (
+                              <XCircle className="w-3.5 h-3.5 text-red-600" />
+                            ) : (
+                              <CheckCircle className="w-3.5 h-3.5 text-blue-600" />
+                            )}
+                            {index.status === "Missed" ? "Missed" : "Checked In"}
+                          </span>
+                          <span className="text-[10px] text-gray-500 font-mono font-bold">
+                            {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
+                          </span>
+                        </div>
+                        {index.status !== "Missed" && (
+                          <button
+                            id={`rejoin-btn-${p.id}`}
+                            onClick={() => handleJoinMeetingAction(p.id, p.link)}
+                            className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-black rounded-lg shadow-2xs transition active:scale-97 cursor-pointer flex items-center justify-center gap-1.5"
+                          >
+                            <Play className="w-2.5 h-2.5 fill-white" /> Rejoin Session
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1294,22 +1318,33 @@ export default function MeetingsHub({
                               <Play className="w-2.5 h-2.5 fill-white" /> Join Project Scrum
                             </button>
                           ) : (
-                            <div className="flex items-center justify-between w-full">
-                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
-                                index.status === "Missed" 
-                                  ? "bg-red-50 text-red-800 border border-red-100" 
-                                  : "bg-indigo-50 text-indigo-800 border border-indigo-100"
-                              }`}>
-                                {index.status === "Missed" ? (
-                                  <XCircle className="w-3.5 h-3.5 text-red-600" />
-                                ) : (
-                                  <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
-                                )}
-                                {index.status === "Missed" ? "Missed" : "Checked In"}
-                              </span>
-                              <span className="text-[10px] text-gray-500 font-mono font-bold">
-                                {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
-                              </span>
+                            <div className="flex flex-col gap-2 w-full">
+                              <div className="flex items-center justify-between w-full">
+                                <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-[10px] font-extrabold ${
+                                  index.status === "Missed" 
+                                    ? "bg-red-50 text-red-800 border border-red-100" 
+                                    : "bg-indigo-50 text-indigo-800 border border-indigo-100"
+                                }`}>
+                                  {index.status === "Missed" ? (
+                                    <XCircle className="w-3.5 h-3.5 text-red-600" />
+                                  ) : (
+                                    <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
+                                  )}
+                                  {index.status === "Missed" ? "Missed" : "Checked In"}
+                                </span>
+                                <span className="text-[10px] text-gray-500 font-mono font-bold">
+                                  {index.status === "Missed" ? "Locked" : (index.joinedAtTime || formatExactJoinTime(index.timestamp))}
+                                </span>
+                              </div>
+                              {index.status !== "Missed" && (
+                                <button
+                                  id={`rejoin-btn-project-${meet.id}`}
+                                  onClick={() => handleJoinMeetingAction(meet.id, meet.jitsiUrl)}
+                                  className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black rounded-lg shadow-2xs transition active:scale-97 cursor-pointer flex items-center justify-center gap-1.5"
+                                >
+                                  <Play className="w-2.5 h-2.5 fill-white" /> Rejoin Project Scrum
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1337,7 +1372,7 @@ export default function MeetingsHub({
             <span className="block text-xl font-bold text-amber-500">
               {dynamicLateCount}
             </span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Late (&gt;2m)</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Late (&gt;{lateThresh}m)</span>
           </div>
           <div className="bg-white p-3 rounded-xl border border-gray-150">
             <span className="block text-xl font-bold text-rose-500">

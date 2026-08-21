@@ -72,12 +72,12 @@ export default function OrientationGate({ profile, onOrientationCleared }: Orien
         </div>
 
         <div className="p-6 sm:p-8 space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <div className="max-w-2xl mx-auto w-full space-y-6">
             
-            {/* Left Block: Simulated Video Player (7 Columns) */}
-            <div className="lg:col-span-7 space-y-3">
+            {/* Orientation Video Briefing */}
+            <div className="space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                1. Orientation Video Briefing
+                Orientation Video Briefing
               </h3>
 
               {/* Simulated Video Feed Layout */}
@@ -130,56 +130,6 @@ export default function OrientationGate({ profile, onOrientationCleared }: Orien
                 </p>
               </div>
             </div>
-
-            {/* Right Block: PDF Code of Conduct Scroll (5 Columns) */}
-            <div className="lg:col-span-5 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">
-                2. Code of Conduct Compliance PDF
-              </h3>
-
-              {/* Scrollable Document Sandbox */}
-              <div 
-                id="conduct-pdf-sandbox" 
-                className="h-68 bg-gray-550 border border-gray-200 rounded-xl overflow-y-auto p-4 space-y-3.5 text-xs text-gray-700 leading-normal shadow-inner bg-[#FAFAFA]"
-              >
-                <div className="text-center pb-2 border-b border-gray-200">
-                  <h4 className="font-bold text-gray-900 leading-tight">BINCOM DEV CENTER CORE COMPLIANCE CODE</h4>
-                  <span className="text-[9px] text-gray-400 font-semibold uppercase">Revision 2026.1 / Full-Stack Legal</span>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="font-bold text-gray-900 text-[11px]">Article 1: The High-Accountability Ethos</p>
-                  <p className="text-gray-600 text-[10.5px]">
-                    Every talent in training commits to a rigorous performance regimen. Consistent, honest daily reporting prevents program disqualification. Working in isolation or failing to document blockages violates program terms.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="font-bold text-gray-900 text-[11px]">Article 2: Daily Standups Punctuality</p>
-                  <p className="text-gray-600 text-[10.5px]">
-                    Morning Standup sessions start promptly at 09:00 AM WAT. A strict 5-minute grace period exists. Clicking "Join" at 09:06 AM registers "Late" status. Joining after 09:15 AM calculates "Missed" status. Multiple "Missed" marks trigger mandatory review boards.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="font-bold text-gray-900 text-[11px]">Article 3: Microservice Submissions Baseline</p>
-                  <p className="text-gray-600 text-[10.5px]">
-                    Personal Development summaries must contain at least 100 words written on technical takeaways and learnings. Plagiarism or copy-pasted summaries are evaluated as instant compliance failures. Knowledge Development (KD) targets at least 1/16 meetings monthly.
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <p className="font-bold text-gray-900 text-[11px]">Article 4: Collaboration Over Competition</p>
-                  <p className="text-gray-600 text-[10.5px]">
-                    Internal project workspaces like eMigr8 or Dev Centers require strict peer collaboration. Sharing repositories, writing modular clean configurations, and supporting track team members is expected.
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-[10px] text-gray-400 text-right font-mono">
-                🔍 Conduct document simulated at full scale
-              </div>
-            </div>
           </div>
 
           {/* Compliance Checkbox Block */}
@@ -207,7 +157,7 @@ export default function OrientationGate({ profile, onOrientationCleared }: Orien
                   <label htmlFor="orientation-agreement-checkbox" className={`text-xs block font-semibold transition ${
                     hasWatchedEnough ? "text-gray-800 cursor-pointer" : "text-gray-400"
                   }`}>
-                    I hereby certify that I have thoroughly watched the video guide brief, scrolled through the core Code of Conduct articles, and pledge to strictly uphold all Bincom Dev Center high-accountability parameters.
+                    I hereby certify that I have thoroughly watched the video guide brief and pledge to strictly uphold all Bincom Dev Center high-accountability parameters.
                   </label>
                   <span className="text-[10px] text-gray-400 mt-1 block">Checking this box logs compliance timestamp to administrative records.</span>
                 </div>

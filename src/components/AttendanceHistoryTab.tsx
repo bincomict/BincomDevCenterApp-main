@@ -17,12 +17,13 @@ import {
   ArrowRight,
   Check,
   X,
-  FileText
+  FileText,
+  Settings
 } from "lucide-react";
-import { Profile, Meeting, AttendanceRecord, MeetingHistoryRecord, AttendanceAuditLog } from "../types";
+import { Profile, Meeting, AttendanceRecord, MeetingHistoryRecord, AttendanceAuditLog, AttendancePunctualityConfig, defaultAttendancePunctualityConfig } from "../types";
 import { getCleanTrackName, formatExactJoinTime } from "../utils/trackUtils";
 import { isMatchingLogForMeeting, isMatchingLogForMeetingAndUser } from "../utils/meetingUtils";
-import { adminUpdateAttendance, subscribeToAuditLogs, parseMeetingTimeToMinutes, formatMinutesToMeetingTime } from "../firebaseService";
+import { adminUpdateAttendance, subscribeToAuditLogs, parseMeetingTimeToMinutes, formatMinutesToMeetingTime, saveAttendancePunctualityConfig, getLagosMinutesPastMidnight, reclassifyAllAttendanceRecords } from "../firebaseService";
 
 interface AttendanceHistoryTabProps {
   isAdmin: boolean;
@@ -34,6 +35,7 @@ interface AttendanceHistoryTabProps {
     attendanceAuditLogs?: AttendanceAuditLog[];
     meetingAssignments: any[];
     meetings?: Meeting[];
+    attendancePunctualityConfig?: AttendancePunctualityConfig;
   };
   onStateUpdate: () => void;
 }
@@ -95,6 +97,40 @@ export default function AttendanceHistoryTab({
   const [newStatusValue, setNewStatusValue] = useState<"Attended" | "Late" | "Very Late" | "Missed">("Attended");
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string>("");
   const [actionErrorMsg, setActionErrorMsg] = useState<string>("");
+
+  // Punctuality threshold config state
+  const pConfig: AttendancePunctualityConfig = state.attendancePunctualityConfig || defaultAttendancePunctualityConfig;
+  const lateThreshold = typeof pConfig.lateThresholdMinutes === "number" ? pConfig.lateThresholdMinutes : 2;
+  const veryLateThreshold = typeof pConfig.veryLateThresholdMinutes === "number" ? pConfig.veryLateThresholdMinutes : 5;
+
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [editLateMins, setEditLateMins] = useState(lateThreshold);
+  const [editVeryLateMins, setEditVeryLateMins] = useState(veryLateThreshold);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  // Helper to determine record punctuality based on active thresholds
+  const getPunctualityForRecord = (record: AttendanceRecord | undefined, scheduledStartTimeStr: string): "On-Time" | "Late" | "Very Late" | "Missed" => {
+    if (!record) return "Missed";
+    const s = (record.status || "").trim().toLowerCase();
+    if (s === "missed" || s === "absent") return "Missed";
+
+    if (record.timestamp) {
+      try {
+        const scheduledMins = parseMeetingTimeToMinutes(scheduledStartTimeStr || "09:00 AM");
+        const joinMins = getLagosMinutesPastMidnight(new Date(record.timestamp));
+        const diff = joinMins - scheduledMins;
+        if (diff <= lateThreshold) return "On-Time";
+        if (diff <= veryLateThreshold) return "Late";
+        return "Very Late";
+      } catch (e) {
+        // Fallback to record status
+      }
+    }
+
+    if (s.includes("very late")) return "Very Late";
+    if (s.includes("late")) return "Late";
+    return "On-Time";
+  };
 
   // Get Monday and Sunday for the selected week date
   const weekBounds = useMemo(() => {
@@ -309,7 +345,6 @@ export default function AttendanceHistoryTab({
     return filteredHistoryMeetings.map(m => {
       // Find all standard users eligible for this meeting
       const eligibleUsers = state.profiles.filter(u => isUserEligibleForMeeting(u, m));
-      const eligibleIds = new Set(eligibleUsers.map(u => u.id));
 
       // Find all attendance records for this meeting and date
       const meetingAttendance = state.attendance.filter(a =>
@@ -322,8 +357,8 @@ export default function AttendanceHistoryTab({
         if (!existing) {
           attendanceMap.set(a.userId, a);
         } else {
-          const existingIsAttended = existing.status === "Attended" || existing.status === "Late";
-          const currentIsAttended = a.status === "Attended" || a.status === "Late";
+          const existingIsAttended = existing.status === "Attended" || existing.status === "Late" || existing.status === "Very Late";
+          const currentIsAttended = a.status === "Attended" || a.status === "Late" || a.status === "Very Late";
           if (currentIsAttended && !existingIsAttended) {
             attendanceMap.set(a.userId, a);
           }
@@ -332,35 +367,35 @@ export default function AttendanceHistoryTab({
 
       const onTimeUsers: typeof eligibleUsers = [];
       const lateUsers: typeof eligibleUsers = [];
+      const veryLateUsers: typeof eligibleUsers = [];
       const missedUsers: typeof eligibleUsers = [];
 
       eligibleUsers.forEach(u => {
         const userLogs = meetingAttendance.filter(a =>
           isMatchingLogForMeetingAndUser(a, m, u)
         );
-        const record = userLogs.find(a => a.status === "Attended" || a.status === "Late") || userLogs[0];
-        if (!record) {
-          // No record means missed / absent
+        const record = userLogs.find(a => a.status === "Attended" || a.status === "Late" || a.status === "Very Late" || (a.status || "").toLowerCase().includes("late")) || userLogs[0];
+        const status = getPunctualityForRecord(record, m.scheduledStartTime);
+        if (status === "Very Late") {
+          veryLateUsers.push(u);
+        } else if (status === "Late") {
+          lateUsers.push(u);
+        } else if (status === "Missed") {
           missedUsers.push(u);
         } else {
-          const s = (record.status || "").toLowerCase();
-          if (s.includes("late")) {
-            lateUsers.push(u);
-          } else if (s.includes("miss") || s.includes("absent")) {
-            missedUsers.push(u);
-          } else {
-            onTimeUsers.push(u);
-          }
+          onTimeUsers.push(u);
         }
       });
 
       const totalEligible = eligibleUsers.length;
       const onTimeCount = onTimeUsers.length;
       const lateCount = lateUsers.length;
+      const veryLateCount = veryLateUsers.length;
       const missedCount = missedUsers.length;
 
       const onTimeRate = totalEligible > 0 ? (onTimeCount / totalEligible) * 100 : 0;
       const lateRate = totalEligible > 0 ? (lateCount / totalEligible) * 100 : 0;
+      const veryLateRate = totalEligible > 0 ? (veryLateCount / totalEligible) * 100 : 0;
       const missedRate = totalEligible > 0 ? (missedCount / totalEligible) * 100 : 0;
 
       return {
@@ -368,14 +403,17 @@ export default function AttendanceHistoryTab({
         eligibleUsers,
         onTimeUsers,
         lateUsers,
+        veryLateUsers,
         missedUsers,
         stats: {
           total: totalEligible,
           onTime: onTimeCount,
           late: lateCount,
+          veryLate: veryLateCount,
           missed: missedCount,
           onTimeRate,
           lateRate,
+          veryLateRate,
           missedRate
         }
       };
@@ -390,18 +428,19 @@ export default function AttendanceHistoryTab({
 
       let onTimeCount = 0;
       let lateCount = 0;
+      let veryLateCount = 0;
       let missedCount = 0;
 
       const meetingRecords = eligibleMeetings.map(m => {
         const userMatches = state.attendance.filter(a =>
           isMatchingLogForMeetingAndUser(a, m, u)
         );
-        const record = userMatches.find(a => a.status === "Attended" || a.status === "Late") || userMatches[0];
+        const record = userMatches.find(a => a.status === "Attended" || a.status === "Late" || a.status === "Very Late" || (a.status || "").toLowerCase().includes("late")) || userMatches[0];
 
-        const status = record ? record.status : "Missed";
-        const s = (status || "").toLowerCase();
-        if (s.includes("late")) lateCount++;
-        else if (s.includes("miss") || s.includes("absent")) missedCount++;
+        const status = getPunctualityForRecord(record, m.scheduledStartTime);
+        if (status === "Very Late") veryLateCount++;
+        else if (status === "Late") lateCount++;
+        else if (status === "Missed") missedCount++;
         else onTimeCount++;
 
         return {
@@ -414,6 +453,7 @@ export default function AttendanceHistoryTab({
       const totalMeetings = eligibleMeetings.length;
       const onTimeRate = totalMeetings > 0 ? (onTimeCount / totalMeetings) * 100 : 0;
       const lateRate = totalMeetings > 0 ? (lateCount / totalMeetings) * 100 : 0;
+      const veryLateRate = totalMeetings > 0 ? (veryLateCount / totalMeetings) * 100 : 0;
       const missedRate = totalMeetings > 0 ? (missedCount / totalMeetings) * 100 : 0;
 
       return {
@@ -423,9 +463,11 @@ export default function AttendanceHistoryTab({
           total: totalMeetings,
           onTime: onTimeCount,
           late: lateCount,
+          veryLate: veryLateCount,
           missed: missedCount,
           onTimeRate,
           lateRate,
+          veryLateRate,
           missedRate
         }
       };
@@ -437,6 +479,7 @@ export default function AttendanceHistoryTab({
     let totalEligibleOccurrences = 0;
     let totalOnTime = 0;
     let totalLate = 0;
+    let totalVeryLate = 0;
     let totalMissed = 0;
 
     if (viewMode === "meeting") {
@@ -444,6 +487,7 @@ export default function AttendanceHistoryTab({
         totalEligibleOccurrences += m.stats.total;
         totalOnTime += m.stats.onTime;
         totalLate += m.stats.late;
+        totalVeryLate += m.stats.veryLate;
         totalMissed += m.stats.missed;
       });
     } else {
@@ -451,12 +495,14 @@ export default function AttendanceHistoryTab({
         totalEligibleOccurrences += u.stats.total;
         totalOnTime += u.stats.onTime;
         totalLate += u.stats.late;
+        totalVeryLate += u.stats.veryLate;
         totalMissed += u.stats.missed;
       });
     }
 
     const onTimePercent = totalEligibleOccurrences > 0 ? (totalOnTime / totalEligibleOccurrences) * 100 : 0;
     const latePercent = totalEligibleOccurrences > 0 ? (totalLate / totalEligibleOccurrences) * 100 : 0;
+    const veryLatePercent = totalEligibleOccurrences > 0 ? (totalVeryLate / totalEligibleOccurrences) * 100 : 0;
     const missedPercent = totalEligibleOccurrences > 0 ? (totalMissed / totalEligibleOccurrences) * 100 : 0;
 
     return {
@@ -464,9 +510,11 @@ export default function AttendanceHistoryTab({
       totalExpectedCheckIns: totalEligibleOccurrences,
       onTime: totalOnTime,
       late: totalLate,
+      veryLate: totalVeryLate,
       missed: totalMissed,
       onTimePercent,
       latePercent,
+      veryLatePercent,
       missedPercent
     };
   }, [meetingBreakdown, userBreakdown, viewMode, filteredHistoryMeetings]);
@@ -502,14 +550,14 @@ export default function AttendanceHistoryTab({
     let csvContent = "data:text/csv;charset=utf-8,";
     
     if (viewMode === "meeting") {
-      csvContent += "Meeting Title,Meeting Type,Date,Scheduled Start,Scheduled End,Duration,Organizer,Expected Check-ins,On-Time Rate %,Late Rate %,Missed Rate %\n";
+      csvContent += `Meeting Title,Meeting Type,Date,Scheduled Start,Scheduled End,Duration,Organizer,Expected Check-ins,On-Time Rate (<=${lateThreshold}m) %,Late Rate (${lateThreshold}-${veryLateThreshold}m) %,Very Late Rate (>${veryLateThreshold}m) %,Missed Rate %\n`;
       meetingBreakdown.forEach(b => {
-        csvContent += `"${b.meeting.title.replace(/"/g, '""')}","${b.meeting.type}","${b.meeting.date}","${b.meeting.scheduledStartTime}","${b.meeting.scheduledEndTime}","${b.meeting.duration}","${b.meeting.organizer}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
+        csvContent += `"${b.meeting.title.replace(/"/g, '""')}","${b.meeting.type}","${b.meeting.date}","${b.meeting.scheduledStartTime}","${b.meeting.scheduledEndTime}","${b.meeting.duration}","${b.meeting.organizer}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.veryLateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
       });
     } else {
-      csvContent += "Student Name,Username,Track,Learning Level,Total Meetings,On-Time Rate %,Late Rate %,Missed Rate %\n";
+      csvContent += `Student Name,Username,Track,Learning Level,Total Meetings,On-Time Rate (<=${lateThreshold}m) %,Late Rate (${lateThreshold}-${veryLateThreshold}m) %,Very Late Rate (>${veryLateThreshold}m) %,Missed Rate %\n`;
       userBreakdown.forEach(b => {
-        csvContent += `"${b.user.fullName.replace(/"/g, '""')}","${b.user.username}","${b.user.track}","${b.user.learningLevel || 'Apprentice'}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
+        csvContent += `"${b.user.fullName.replace(/"/g, '""')}","${b.user.username}","${b.user.track}","${b.user.learningLevel || 'Apprentice'}",${b.stats.total},${b.stats.onTimeRate.toFixed(1)},${b.stats.lateRate.toFixed(1)},${b.stats.veryLateRate.toFixed(1)},${b.stats.missedRate.toFixed(1)}\n`;
       });
     }
 
@@ -653,21 +701,21 @@ export default function AttendanceHistoryTab({
       </div>
 
       {/* STATS OVERVIEW PANEL */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         
         {/* TOTAL INSTANCES */}
-        <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-2xs">
+        <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-2xs">
           <span className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Scheduled Meetings</span>
-          <span className="block text-xl font-extrabold text-gray-900 mt-1">{globalSummaryStats.totalInstances}</span>
+          <span className="block text-lg font-extrabold text-gray-900 mt-1">{globalSummaryStats.totalInstances}</span>
           <span className="block text-[9px] text-gray-500 mt-0.5">Instances occurred</span>
         </div>
 
         {/* ON-TIME RATE */}
-        <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-emerald-500">
+        <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-emerald-500">
           <span className="block text-[10px] font-extrabold text-[#059669] uppercase tracking-wider flex items-center gap-1">
             <CheckCircle className="w-3.5 h-3.5" /> On-Time Rate
           </span>
-          <span className="block text-xl font-extrabold text-emerald-700 mt-1">
+          <span className="block text-lg font-extrabold text-emerald-700 mt-1">
             {globalSummaryStats.onTimePercent.toFixed(1)}%
           </span>
           <span className="block text-[9px] text-gray-500 mt-0.5">
@@ -676,24 +724,37 @@ export default function AttendanceHistoryTab({
         </div>
 
         {/* LATE RATE */}
-        <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-amber-500">
+        <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-amber-500">
           <span className="block text-[10px] font-extrabold text-[#d97706] uppercase tracking-wider flex items-center gap-1">
-            <Clock className="w-3.5 h-3.5" /> Late Rate (&gt;2m)
+            <Clock className="w-3.5 h-3.5" /> Late Rate ({lateThreshold}-{veryLateThreshold}m)
           </span>
-          <span className="block text-xl font-extrabold text-amber-700 mt-1">
+          <span className="block text-lg font-extrabold text-amber-700 mt-1">
             {globalSummaryStats.latePercent.toFixed(1)}%
           </span>
           <span className="block text-[9px] text-gray-500 mt-0.5">
-            {globalSummaryStats.late} late check-ins logged
+            {globalSummaryStats.late} late check-ins
+          </span>
+        </div>
+
+        {/* VERY LATE RATE */}
+        <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-orange-500">
+          <span className="block text-[10px] font-extrabold text-[#ea580c] uppercase tracking-wider flex items-center gap-1">
+            <Clock className="w-3.5 h-3.5" /> Very Late (&gt;{veryLateThreshold}m)
+          </span>
+          <span className="block text-lg font-extrabold text-orange-700 mt-1">
+            {globalSummaryStats.veryLatePercent.toFixed(1)}%
+          </span>
+          <span className="block text-[9px] text-gray-500 mt-0.5">
+            {globalSummaryStats.veryLate} very late check-ins
           </span>
         </div>
 
         {/* MISSED RATE */}
-        <div className="bg-white p-4 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-rose-500">
+        <div className="bg-white p-3.5 rounded-xl border border-gray-150 shadow-2xs border-l-4 border-l-rose-500 col-span-2 sm:col-span-1">
           <span className="block text-[10px] font-extrabold text-[#e11d48] uppercase tracking-wider flex items-center gap-1">
             <AlertTriangle className="w-3.5 h-3.5" /> Missed Rate
           </span>
-          <span className="block text-xl font-extrabold text-rose-700 mt-1">
+          <span className="block text-lg font-extrabold text-rose-700 mt-1">
             {globalSummaryStats.missedPercent.toFixed(1)}%
           </span>
           <span className="block text-[9px] text-gray-500 mt-0.5">
@@ -735,13 +796,28 @@ export default function AttendanceHistoryTab({
             </span>
           )}
 
-          {/* Export Actions */}
-          <button
-            onClick={handleExportCSV}
-            className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:text-gray-950 hover:bg-gray-50 text-xs font-bold transition shadow-xs"
-          >
-            <FileDown className="w-3.5 h-3.5 text-gray-500" /> Export Ledger (CSV)
-          </button>
+          {/* Export & Admin Config Actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  setEditLateMins(lateThreshold);
+                  setEditVeryLateMins(veryLateThreshold);
+                  setIsConfigModalOpen(true);
+                }}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-[#4B5E40]/30 bg-[#4B5E40]/10 text-[#4B5E40] hover:bg-[#4B5E40]/20 text-xs font-bold transition shadow-xs cursor-pointer"
+                title="Configure time thresholds for Late and Very Late check-ins"
+              >
+                <Settings className="w-3.5 h-3.5 text-[#4B5E40]" /> Punctuality Rules ({lateThreshold}m / {veryLateThreshold}m)
+              </button>
+            )}
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 hover:text-gray-950 hover:bg-gray-50 text-xs font-bold transition shadow-xs"
+            >
+              <FileDown className="w-3.5 h-3.5 text-gray-500" /> Export Ledger (CSV)
+            </button>
+          </div>
 
         </div>
 
@@ -753,7 +829,7 @@ export default function AttendanceHistoryTab({
                 No meeting history instances found for the selected timeframe.
               </div>
             ) : (
-              meetingBreakdown.map(({ meeting, stats, onTimeUsers, lateUsers, missedUsers }) => {
+              meetingBreakdown.map(({ meeting, stats, onTimeUsers, lateUsers, veryLateUsers, missedUsers }) => {
                 const isExpanded = expandedMeetingId === meeting.id;
                 
                 return (
@@ -782,14 +858,14 @@ export default function AttendanceHistoryTab({
                       <div className="flex items-center justify-between md:justify-end gap-6 shrink-0">
                         
                         {/* Progress Indicators */}
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           
                           {/* On-Time Rate mini indicator */}
                           <div className="text-right">
                             <span className="block text-[10px] font-extrabold text-emerald-600">
                               {stats.onTime} On-Time ({stats.onTimeRate.toFixed(0)}%)
                             </span>
-                            <span className="block text-[8px] text-gray-400">Checked in &lt;= 2m</span>
+                            <span className="block text-[8px] text-gray-400">&lt;= {lateThreshold}m</span>
                           </div>
 
                           {/* Late Rate mini indicator */}
@@ -797,7 +873,15 @@ export default function AttendanceHistoryTab({
                             <span className="block text-[10px] font-extrabold text-amber-600">
                               {stats.late} Late ({stats.lateRate.toFixed(0)}%)
                             </span>
-                            <span className="block text-[8px] text-gray-400">Checked in &gt; 2m</span>
+                            <span className="block text-[8px] text-gray-400">{lateThreshold}m - {veryLateThreshold}m</span>
+                          </div>
+
+                          {/* Very Late Rate mini indicator */}
+                          <div className="text-right">
+                            <span className="block text-[10px] font-extrabold text-orange-600">
+                              {stats.veryLate} Very Late ({stats.veryLateRate.toFixed(0)}%)
+                            </span>
+                            <span className="block text-[8px] text-gray-400">&gt; {veryLateThreshold}m</span>
                           </div>
 
                           {/* Missed Rate mini indicator */}
@@ -805,7 +889,7 @@ export default function AttendanceHistoryTab({
                             <span className="block text-[10px] font-extrabold text-rose-600">
                               {stats.missed} Missed ({stats.missedRate.toFixed(0)}%)
                             </span>
-                            <span className="block text-[8px] text-gray-400">No Check-in logged</span>
+                            <span className="block text-[8px] text-gray-400">No Check-in</span>
                           </div>
 
                         </div>
@@ -840,13 +924,13 @@ export default function AttendanceHistoryTab({
                           </div>
                         </div>
 
-                        {/* COLUMNS: ON-TIME, LATE, MISSED */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* COLUMNS: ON-TIME, LATE, VERY LATE, MISSED */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                           
                           {/* ON-TIME LIST */}
                           <div className="bg-white p-4 rounded-lg border border-gray-150 space-y-2.5">
                             <h4 className="text-[10px] font-extrabold text-emerald-700 uppercase tracking-wider flex items-center gap-1 border-b border-gray-100 pb-1.5">
-                              <CheckCircle className="w-3.5 h-3.5" /> On-Time List ({onTimeUsers.length})
+                              <CheckCircle className="w-3.5 h-3.5" /> On-Time (&lt;={lateThreshold}m) ({onTimeUsers.length})
                             </h4>
                             {onTimeUsers.length === 0 ? (
                               <span className="block text-[10px] text-gray-400 font-medium py-1">No students checked in on-time.</span>
@@ -879,10 +963,10 @@ export default function AttendanceHistoryTab({
                           {/* LATE LIST */}
                           <div className="bg-white p-4 rounded-lg border border-gray-150 space-y-2.5">
                             <h4 className="text-[10px] font-extrabold text-amber-700 uppercase tracking-wider flex items-center gap-1 border-b border-gray-100 pb-1.5">
-                              <Clock className="w-3.5 h-3.5" /> Late List ({lateUsers.length})
+                              <Clock className="w-3.5 h-3.5" /> Late ({lateThreshold}m-{veryLateThreshold}m) ({lateUsers.length})
                             </h4>
                             {lateUsers.length === 0 ? (
-                              <span className="block text-[10px] text-gray-400 font-medium py-1">No students checked in late.</span>
+                              <span className="block text-[10px] text-gray-400 font-medium py-1">No students checked in {lateThreshold}-{veryLateThreshold}m late.</span>
                             ) : (
                               <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
                                 {lateUsers.map(u => (
@@ -896,6 +980,39 @@ export default function AttendanceHistoryTab({
                                         onClick={() => {
                                           setEditingRecord({ userId: u.id, meetingId: meeting.meetingId, meetingDate: meeting.date, currentStatus: "Late" });
                                           setNewStatusValue("Late");
+                                        }}
+                                        className="text-gray-400 hover:text-[#4B5E40] transition p-1"
+                                        title="Correction Override"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* VERY LATE LIST */}
+                          <div className="bg-white p-4 rounded-lg border border-gray-150 space-y-2.5">
+                            <h4 className="text-[10px] font-extrabold text-orange-700 uppercase tracking-wider flex items-center gap-1 border-b border-gray-100 pb-1.5">
+                              <Clock className="w-3.5 h-3.5" /> Very Late (&gt;{veryLateThreshold}m) ({veryLateUsers.length})
+                            </h4>
+                            {veryLateUsers.length === 0 ? (
+                              <span className="block text-[10px] text-gray-400 font-medium py-1">No students checked in &gt; {veryLateThreshold}m late.</span>
+                            ) : (
+                              <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                                {veryLateUsers.map(u => (
+                                  <div key={u.id} className="py-2 flex items-center justify-between text-xs">
+                                    <div>
+                                      <span className="block font-bold text-gray-800">{u.fullName}</span>
+                                      <span className="block text-[9px] text-gray-400">{u.track}</span>
+                                    </div>
+                                    {isAdmin && (
+                                      <button 
+                                        onClick={() => {
+                                          setEditingRecord({ userId: u.id, meetingId: meeting.meetingId, meetingDate: meeting.date, currentStatus: "Very Late" });
+                                          setNewStatusValue("Very Late");
                                         }}
                                         className="text-gray-400 hover:text-[#4B5E40] transition p-1"
                                         title="Correction Override"
@@ -1002,6 +1119,11 @@ export default function AttendanceHistoryTab({
                           <div className="text-right">
                             <span className="block text-[10px] font-extrabold text-amber-600 uppercase tracking-wider">Late</span>
                             <span className="block text-amber-700 font-extrabold">{stats.late} ({stats.lateRate.toFixed(0)}%)</span>
+                          </div>
+
+                          <div className="text-right">
+                            <span className="block text-[10px] font-extrabold text-orange-600 uppercase tracking-wider">Very Late</span>
+                            <span className="block text-orange-700 font-extrabold">{stats.veryLate} ({stats.veryLateRate.toFixed(0)}%)</span>
                           </div>
 
                           <div className="text-right">
@@ -1234,6 +1356,183 @@ export default function AttendanceHistoryTab({
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* PUNCTUALITY THRESHOLDS CONFIG MODAL */}
+      {isConfigModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-150 space-y-5">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-[#4B5E40]/10 text-[#4B5E40] flex items-center justify-center font-bold">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-gray-950 text-sm">Attendance Punctuality Thresholds</h3>
+                  <p className="text-[10px] text-gray-500">Configure time limits (in minutes) for Late and Very Late check-ins</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsConfigModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Quick Presets */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-1.5">
+                  Quick Threshold Presets
+                </label>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => { setEditLateMins(2); setEditVeryLateMins(5); }}
+                    className={`p-2 rounded-lg border text-left font-semibold transition cursor-pointer ${
+                      editLateMins === 2 && editVeryLateMins === 5
+                        ? "border-[#4B5E40] bg-[#4B5E40]/5 text-[#4B5E40]"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    <div className="font-bold">Standard</div>
+                    <div className="text-[10px] text-gray-400">Late: &gt;2m | Very Late: &gt;5m</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditLateMins(5); setEditVeryLateMins(10); }}
+                    className={`p-2 rounded-lg border text-left font-semibold transition cursor-pointer ${
+                      editLateMins === 5 && editVeryLateMins === 10
+                        ? "border-[#4B5E40] bg-[#4B5E40]/5 text-[#4B5E40]"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    <div className="font-bold">Flexible</div>
+                    <div className="text-[10px] text-gray-400">Late: &gt;5m | Very Late: &gt;10m</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditLateMins(10); setEditVeryLateMins(15); }}
+                    className={`p-2 rounded-lg border text-left font-semibold transition cursor-pointer ${
+                      editLateMins === 10 && editVeryLateMins === 15
+                        ? "border-[#4B5E40] bg-[#4B5E40]/5 text-[#4B5E40]"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    <div className="font-bold">Extended</div>
+                    <div className="text-[10px] text-gray-400">Late: &gt;10m | Very Late: &gt;15m</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditLateMins(15); setEditVeryLateMins(20); }}
+                    className={`p-2 rounded-lg border text-left font-semibold transition cursor-pointer ${
+                      editLateMins === 15 && editVeryLateMins === 20
+                        ? "border-[#4B5E40] bg-[#4B5E40]/5 text-[#4B5E40]"
+                        : "border-gray-200 hover:bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    <div className="font-bold">Generous</div>
+                    <div className="text-[10px] text-gray-400">Late: &gt;15m | Very Late: &gt;20m</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Custom Inputs */}
+              <div className="space-y-3 pt-2 border-t border-gray-100">
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-1">
+                    Late Threshold (Minutes after meeting start)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={60}
+                      value={editLateMins}
+                      onChange={(e) => setEditLateMins(Math.max(0, parseInt(e.target.value) || 0))}
+                      className="w-full text-xs font-bold px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:border-[#4B5E40]"
+                    />
+                    <span className="text-xs text-gray-500 shrink-0 font-medium">minutes</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Students checking in between 0 and {editLateMins} minutes past start are marked <strong className="text-emerald-700">On-Time</strong>.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-1">
+                    Very Late Threshold (Minutes after meeting start)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={editLateMins + 1}
+                      max={120}
+                      value={editVeryLateMins}
+                      onChange={(e) => setEditVeryLateMins(Math.max(editLateMins + 1, parseInt(e.target.value) || 0))}
+                      className="w-full text-xs font-bold px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:border-[#4B5E40]"
+                    />
+                    <span className="text-xs text-gray-500 shrink-0 font-medium">minutes</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    Students checking in between {editLateMins}m and {editVeryLateMins}m past start are marked <strong className="text-amber-700">Late</strong>. Check-ins past {editVeryLateMins}m are marked <strong className="text-orange-700">Very Late</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Live Summary Box */}
+              <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 text-[11px] space-y-1 text-gray-700">
+                <div className="font-extrabold text-gray-900 mb-1">Effective Punctuality Rules:</div>
+                <div className="flex items-center justify-between text-emerald-800 font-semibold">
+                  <span>• On-Time:</span>
+                  <span>0 to {editLateMins} mins</span>
+                </div>
+                <div className="flex items-center justify-between text-amber-800 font-semibold">
+                  <span>• Late:</span>
+                  <span>{editLateMins + 1} to {editVeryLateMins} mins</span>
+                </div>
+                <div className="flex items-center justify-between text-orange-800 font-semibold">
+                  <span>• Very Late:</span>
+                  <span>&gt; {editVeryLateMins} mins</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setIsConfigModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSavingConfig(true);
+                  try {
+                    await saveAttendancePunctualityConfig({
+                      lateThresholdMinutes: editLateMins,
+                      veryLateThresholdMinutes: editVeryLateMins
+                    });
+                    await reclassifyAllAttendanceRecords(editLateMins, editVeryLateMins);
+                    onStateUpdate();
+                    setIsConfigModalOpen(false);
+                  } catch (err: any) {
+                    alert("Failed to save config: " + err.message);
+                  } finally {
+                    setIsSavingConfig(false);
+                  }
+                }}
+                disabled={isSavingConfig}
+                className="px-4 py-2 rounded-lg bg-[#4B5E40] hover:bg-[#3d4d34] text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isSavingConfig ? "Saving..." : "Save Punctuality Rules"}
+              </button>
+            </div>
           </div>
         </div>
       )}

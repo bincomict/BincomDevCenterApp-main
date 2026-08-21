@@ -411,6 +411,16 @@ export const DEFAULT_KD_COMPULSORY_LEVELS = [
   "Global Techie Level 1"
 ];
 
+export interface AttendancePunctualityConfig {
+  lateThresholdMinutes: number; // default 2 (check-in > lateThresholdMinutes past start time marked Late)
+  veryLateThresholdMinutes: number; // default 5 (check-in > veryLateThresholdMinutes past start time marked Very Late)
+}
+
+export const defaultAttendancePunctualityConfig: AttendancePunctualityConfig = {
+  lateThresholdMinutes: 2,
+  veryLateThresholdMinutes: 5,
+};
+
 export const defaultKnowledgeDevelopmentInfo: KnowledgeDevelopmentInfo = {
   title: "Knowledge Development (KD) Microservice",
   about: "Knowledge Development (KD) is a structured learning and knowledge-sharing platform within the Bincom Dev Center App that enables techies to continuously learn, share expertise, present technical topics, and broaden their knowledge across different areas of Information and Communication Technology (ICT).",

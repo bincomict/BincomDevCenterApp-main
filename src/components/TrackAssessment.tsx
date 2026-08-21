@@ -421,8 +421,8 @@ export default function TrackAssessment({
               </h3>
             </div>
 
-            {/* Video Container & Conduct Sandbox */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Video Container */}
+            <div className="max-w-xl mx-auto w-full">
               
               {/* Orientation Video */}
               <div className="space-y-2">
@@ -459,19 +459,6 @@ export default function TrackAssessment({
                 </div>
               </div>
 
-              {/* Code of Conduct */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold text-gray-500 uppercase flex items-center gap-1">
-                  📄 Code of Conduct
-                </span>
-                <div className="h-[120px] bg-gray-50 rounded-lg border border-gray-200 p-3 text-[9px] text-gray-500 overflow-y-auto space-y-2 leading-relaxed" id="orientation-pass-conduct-box">
-                  <p className="font-bold text-gray-700 uppercase tracking-wider text-[9.5px]">Bincom Dev Center Handbook</p>
-                  <p><b>1. Real-time Attendance:</b> Talents must mark daily attendance within the meetings hub before grace durations expire.</p>
-                  <p><b>2. Accountability updates:</b> Standard project sync updates, standups text, and weekly drill items must be honest and verified.</p>
-                  <p><b>3. Code Quality checks:</b> Mentors hold absolute auditing authority regarding compliance validations.</p>
-                </div>
-              </div>
-
             </div>
 
             {/* Acknowledgment & Proceed */}
@@ -489,7 +476,7 @@ export default function TrackAssessment({
                   className="w-4 h-4 accent-[#4B5E40] mt-0.5"
                 />
                 <span>
-                  I have watched the orientation video and read the Community Code of Conduct.
+                  I have watched the orientation video.
                 </span>
               </label>
 

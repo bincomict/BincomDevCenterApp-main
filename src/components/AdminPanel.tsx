@@ -14,6 +14,7 @@ import {
   isMatchingLogForMeetingAndUser,
 } from "../utils/meetingUtils";
 import {
+  synchronizeMeetings,
   saveMeetingType,
   deleteMeetingType,
   reviewStudent,
@@ -38,6 +39,7 @@ import {
   formatMinutesToTimeString,
 } from "../firebaseService";
 import { firebaseConfig } from "../firebase";
+import { purgeDatabase, seedDatabase } from "../seed";
 import { toast } from "./Toast";
 import {
   Users,
@@ -1694,8 +1696,6 @@ export default function AdminPanel({
 
     setTimeout(async () => {
       try {
-        const { synchronizeMeetings } = await import("../firebaseService");
-
         // Create safety timeout promise
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
@@ -1736,7 +1736,6 @@ export default function AdminPanel({
 
   const handleToggleMidnightSync = async (enabled: boolean) => {
     try {
-      const { updateAppConfigField } = await import("../firebaseService");
       await updateAppConfigField("autoMidnightSyncEnabled", enabled);
       triggerSuccess(
         `Midnight Sync successfully ${enabled ? "enabled" : "disabled"}!`,
@@ -1792,7 +1791,6 @@ export default function AdminPanel({
         setErrorMsg("");
         setSuccessMsg("");
         try {
-          const { purgeDatabase } = await import("../seed");
           await purgeDatabase(adminProfile?.id);
           triggerSuccess(
             "Database successfully purged! All seed data has been deleted and you have a completely fresh workspace.",
@@ -1820,7 +1818,6 @@ export default function AdminPanel({
         setErrorMsg("");
         setSuccessMsg("");
         try {
-          const { seedDatabase } = await import("../seed");
           await seedDatabase(true); // force = true to override
           triggerSuccess(
             "Database successfully configured with default tasks, microservices, and pathways.",

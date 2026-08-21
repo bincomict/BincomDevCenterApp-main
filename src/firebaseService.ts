@@ -26,7 +26,7 @@ import {
   sendPasswordResetEmail
 } from "firebase/auth";
 import { db, auth } from "./firebase";
-import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation } from "./types";
+import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation, AttendancePunctualityConfig, defaultAttendancePunctualityConfig } from "./types";
 import { isMatchingLogForMeetingAndUser, isMatchingLogForMeeting } from "./utils/meetingUtils";
 
 export enum OperationType {
@@ -100,11 +100,19 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
 
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  const isNetworkOrAuthError = 
+    errMsg.toLowerCase().includes("network-request-failed") ||
+    errMsg.toLowerCase().includes("connection failed") ||
+    errMsg.toLowerCase().includes("offline") ||
+    errMsg.toLowerCase().includes("unavailable");
 
   if (isPermissionError) {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
     throw new Error(JSON.stringify(errInfo));
+  } else if (isNetworkOrAuthError) {
+    console.warn('Firestore network/offline/auth state warning:', errMsg, path ? `Path: ${path}` : '');
   } else {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
     console.warn('Gracefully handled non-permission Firestore transport/offline error:', errMsg);
   }
 }
@@ -153,19 +161,22 @@ export const parseMeetingTimeToMinutes = (timeStr: string): number => {
   if (!timeStr) return 0;
   let clean = timeStr.replace(/\s*WAT\s*$/i, "").trim().toUpperCase();
   
-  const match = clean.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+  // Extract start time segment before any hyphen or dash
+  const firstPart = clean.split("-")[0].trim();
+  const hasPM = clean.includes("PM");
+  const hasAM = clean.includes("AM");
+
+  const match = firstPart.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
   if (!match) return 0;
   
   let hours = parseInt(match[1], 10);
   const minutes = match[2] ? parseInt(match[2], 10) : 0;
-  const ampm = match[3];
+  const partAmpm = match[3] || (hasPM ? "PM" : (hasAM ? "AM" : undefined));
   
-  if (ampm) {
-    if (ampm === "PM" && hours < 12) hours += 12;
-    if (ampm === "AM" && hours === 12) hours = 0;
-  } else {
-    if (hours < 8) hours += 12;
-  }
+  if (partAmpm === "PM" && hours < 12) hours += 12;
+  if (partAmpm === "AM" && hours === 12) hours = 0;
+  if (!partAmpm && hours < 8) hours += 12;
+
   return hours * 60 + minutes;
 };
 
@@ -361,7 +372,8 @@ export const autoArchiveCompletedMeetings = async (
   profiles: any[] = [],
   attendance: any[] = [],
   assignments: any[] = [],
-  meetingHistory: any[] = []
+  meetingHistory: any[] = [],
+  punctualityConfig?: AttendancePunctualityConfig
 ): Promise<void> => {
   if (isQuotaExhausted) return;
   if (!meetings || meetings.length === 0) return;
@@ -497,7 +509,10 @@ export const autoArchiveCompletedMeetings = async (
       });
 
       if (hasRealAttendance) {
-        // Clean up any stale auto-generated missed records for this user and meeting
+        // Clean up any stale auto-generated missed records and re-verify attendance status punctuality classification
+        const lateThresh = punctualityConfig?.lateThresholdMinutes ?? 2;
+        const veryLateThresh = punctualityConfig?.veryLateThresholdMinutes ?? 5;
+
         userAttLogs.forEach(a => {
           const s = (a.status || "").toLowerCase();
           if (s.includes("miss") || s.includes("absent")) {
@@ -508,6 +523,29 @@ export const autoArchiveCompletedMeetings = async (
                 batches.push(currentBatch);
                 currentBatch = writeBatch(db);
                 batchCount = 0;
+              }
+            }
+          } else if (a.timestamp && a.id) {
+            const scheduledTimeStr = a.scheduledStartTime || m.scheduledStartTime || m.timeString || m.time || "09:00 AM";
+            const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+            const joinMins = getLagosMinutesPastMidnight(new Date(a.timestamp));
+            if (scheduledMins > 0 && joinMins > 0) {
+              const diff = joinMins - scheduledMins;
+              let expectedStatus = "Attended";
+              if (diff > veryLateThresh) {
+                expectedStatus = "Very Late";
+              } else if (diff > lateThresh) {
+                expectedStatus = "Late";
+              }
+
+              if (a.status !== expectedStatus) {
+                currentBatch.update(doc(db, "attendance", a.id), { status: expectedStatus, updatedAt: new Date().toISOString() });
+                batchCount++;
+                if (batchCount >= writeBatchSize) {
+                  batches.push(currentBatch);
+                  currentBatch = writeBatch(db);
+                  batchCount = 0;
+                }
               }
             }
           }
@@ -697,7 +735,8 @@ export const subscribeToAllState = (
     tasks: [],
     microservices: [],
     careerPathways: null,
-    autoMidnightSyncEnabled: false
+    autoMidnightSyncEnabled: false,
+    attendancePunctualityConfig: defaultAttendancePunctualityConfig
   };
 
   const isAdmin = userProfile?.role === "admin";
@@ -809,6 +848,7 @@ export const subscribeToAllState = (
           state.careerPathways = appConfig.careerPathways || null;
           state.autoMidnightSyncEnabled = appConfig.autoMidnightSyncEnabled !== undefined ? appConfig.autoMidnightSyncEnabled : false;
           state.kdInfo = appConfig.kdInfo || defaultKnowledgeDevelopmentInfo;
+          state.attendancePunctualityConfig = appConfig.attendancePunctualityConfig || defaultAttendancePunctualityConfig;
         }
       } else if (colName === "profiles" && !isAdmin) {
         // Standard user: merge real-time update of own profile with one-time fetched profiles list
@@ -1040,7 +1080,8 @@ export const subscribeToAllState = (
         compiled.profiles,
         compiled.attendance,
         compiled.meetingAssignments,
-        compiled.meetingHistory
+        compiled.meetingHistory,
+        compiled.attendancePunctualityConfig
       ).catch((err) =>
         console.error("Auto archive state check error:", err)
       );
@@ -1060,7 +1101,8 @@ export const subscribeToAllState = (
         state.profiles,
         state.attendance,
         state.meetingAssignments,
-        state.meetingHistory
+        state.meetingHistory,
+        state.attendancePunctualityConfig
       ).catch((err) =>
         console.error("Auto archive interval check error:", err)
       );
@@ -1199,10 +1241,21 @@ export const runMidnightSyncIfNeeded = async (
     return true;
 
   } catch (err: any) {
-    console.error("[midnightSync] Transaction or lock-based execution failed:", err);
-    // Basic backoff / safe warning
-    if (err.code === "resource-exhausted" || err.message?.toLowerCase().includes("quota")) {
+    const errMsg = String(err?.message || err).toLowerCase();
+    const isNetworkOrOffline = 
+      errMsg.includes("connection failed") || 
+      errMsg.includes("offline") || 
+      errMsg.includes("network") ||
+      errMsg.includes("unavailable") ||
+      err?.code === "unavailable" ||
+      err?.code === "auth/network-request-failed";
+
+    if (isNetworkOrOffline) {
+      console.warn("[midnightSync] Lock transaction skipped due to transient network/connection state:", err?.message || err);
+    } else if (err?.code === "resource-exhausted" || errMsg.includes("quota")) {
       console.warn("[midnightSync] Resource exhausted / quota exceeded in lock transaction. Skipping sync check...");
+    } else {
+      console.error("[midnightSync] Transaction or lock-based execution failed:", err);
     }
     return false;
   }
@@ -1450,6 +1503,16 @@ export const deleteMeetingType = async (typeName: string): Promise<void> => {
   if (d.exists()) {
     const existing = d.data().meetingTypes || [];
     await updateDoc(docRef, { meetingTypes: existing.filter((t: string) => t !== typeName) });
+  }
+};
+
+export const saveAttendancePunctualityConfig = async (config: AttendancePunctualityConfig): Promise<void> => {
+  const docRef = doc(db, "metadata", "app_config");
+  const d = await getDoc(docRef);
+  if (d.exists()) {
+    await updateDoc(docRef, { attendancePunctualityConfig: config });
+  } else {
+    await setDoc(docRef, { meetingTypes: [], kdCounts: {}, microserviceOwners: {}, attendancePunctualityConfig: config });
   }
 };
 
@@ -3161,7 +3224,7 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   // Determine punctuality status
   const now = new Date();
   const todayStr = getLagosDateString(now);
-  const scheduledTimeStr = meeting.timeString || (meeting as any).time || (meeting as any).scheduledStartTime || (meeting as any).startTime || "09:00 AM";
+  const scheduledTimeStr = (meeting as any).scheduledStartTime || meeting.timeString || (meeting as any).time || (meeting as any).startTime || "09:00 AM";
   const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
   const currentMinutes = getLagosMinutesPastMidnight(now);
 
@@ -3170,10 +3233,24 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
   const endTimeMinutes = scheduledMinutes + durationMinutes;
 
+  // Read configurable punctuality thresholds
+  let lateThreshold = 2;
+  let veryLateThreshold = 5;
+  try {
+    const appConfigDoc = await getDoc(doc(db, "metadata", "app_config"));
+    if (appConfigDoc.exists() && appConfigDoc.data()?.attendancePunctualityConfig) {
+      const cfg = appConfigDoc.data().attendancePunctualityConfig;
+      if (typeof cfg.lateThresholdMinutes === "number") lateThreshold = cfg.lateThresholdMinutes;
+      if (typeof cfg.veryLateThresholdMinutes === "number") veryLateThreshold = cfg.veryLateThresholdMinutes;
+    }
+  } catch (err) {
+    // Fall back to defaults (2m and 5m) if offline
+  }
+
   let status: "Attended" | "Late" | "Very Late" | "Missed" | string = "Attended";
-  if (currentMinutes > scheduledMinutes + 5) {
+  if (currentMinutes > scheduledMinutes + veryLateThreshold) {
     status = "Very Late";
-  } else if (currentMinutes > scheduledMinutes + 2) {
+  } else if (currentMinutes > scheduledMinutes + lateThreshold) {
     status = "Late";
   }
 
@@ -3374,7 +3451,7 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
     const q = query(collection(db, "profiles"), where("username", "==", identifier.trim().toLowerCase()));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
-      throw new Error("Failed to find this staff or student profile on our registry.");
+      throw new Error("Incorrect password/email, please try again.");
     }
     const userDoc = snapshot.docs[0];
     targetProfile = userDoc.data() as Profile;
@@ -3423,6 +3500,22 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
 
   } catch (error: any) {
     if (
+      error.code === "auth/invalid-credential" ||
+      error.code === "auth/wrong-password" ||
+      error.code === "auth/user-not-found" ||
+      error.code === "auth/invalid-email" ||
+      (error.message && (
+        error.message.includes("invalid-credential") ||
+        error.message.includes("wrong-password") ||
+        error.message.includes("user-not-found") ||
+        error.message.includes("invalid-email") ||
+        error.message.includes("auth/invalid-credential")
+      ))
+    ) {
+      throw new Error("Incorrect password/email, please try again.");
+    }
+
+    if (
       error.code === "auth/operation-not-allowed" ||
       error.code === "auth/admin-restricted-operation" ||
       (error.message && error.message.includes("operation-not-allowed"))
@@ -3448,7 +3541,7 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
         return targetProfile;
       }
 
-      throw new Error("User profile not found. Please register for a new account.");
+      throw new Error("Incorrect password/email, please try again.");
     }
     throw error;
   }
@@ -3814,6 +3907,77 @@ export const deleteKDPresentation = async (id: string): Promise<void> => {
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `kdPresentations/${id}`);
   }
+};
+
+export const reclassifyAllAttendanceRecords = async (lateThresholdMins?: number, veryLateThresholdMins?: number): Promise<number> => {
+  let lateThresh = lateThresholdMins;
+  let veryLateThresh = veryLateThresholdMins;
+
+  if (lateThresh === undefined || veryLateThresh === undefined) {
+    try {
+      const appConfigDoc = await getDoc(doc(db, "metadata", "app_config"));
+      if (appConfigDoc.exists() && appConfigDoc.data()?.attendancePunctualityConfig) {
+        const cfg = appConfigDoc.data().attendancePunctualityConfig;
+        if (typeof cfg.lateThresholdMinutes === "number") lateThresh = cfg.lateThresholdMinutes;
+        if (typeof cfg.veryLateThresholdMinutes === "number") veryLateThresh = cfg.veryLateThresholdMinutes;
+      }
+    } catch (e) {}
+  }
+
+  if (lateThresh === undefined) lateThresh = 2;
+  if (veryLateThresh === undefined) veryLateThresh = 5;
+
+  const attSnap = await getDocs(collection(db, "attendance"));
+  const meetingsSnap = await getDocs(collection(db, "meetings"));
+  const meetingsMap = new Map<string, any>();
+  meetingsSnap.docs.forEach(d => meetingsMap.set(d.id, d.data()));
+
+  let updatedCount = 0;
+  let batch = writeBatch(db);
+  let batchCount = 0;
+
+  for (const attDoc of attSnap.docs) {
+    const data = attDoc.data() as AttendanceRecord;
+    if (!data.timestamp || data.status === "Missed") continue;
+
+    let scheduledTimeStr = data.scheduledStartTime;
+    if (!scheduledTimeStr && data.meetingId) {
+      const m = meetingsMap.get(data.meetingId);
+      if (m) {
+        scheduledTimeStr = m.scheduledStartTime || m.timeString || m.time;
+      }
+    }
+    if (!scheduledTimeStr) continue;
+
+    const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+    const joinMins = getLagosMinutesPastMidnight(new Date(data.timestamp));
+    if (scheduledMins <= 0 || joinMins <= 0) continue;
+
+    const diff = joinMins - scheduledMins;
+    let expectedStatus = "Attended";
+    if (diff > veryLateThresh) {
+      expectedStatus = "Very Late";
+    } else if (diff > lateThresh) {
+      expectedStatus = "Late";
+    }
+
+    if (data.status !== expectedStatus) {
+      batch.update(attDoc.ref, { status: expectedStatus, updatedAt: new Date().toISOString() });
+      updatedCount++;
+      batchCount++;
+      if (batchCount >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+  }
+
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+
+  return updatedCount;
 };
 
 
