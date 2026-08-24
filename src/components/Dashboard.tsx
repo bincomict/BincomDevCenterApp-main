@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Profile, AttendanceRecord, Meeting } from "../types";
 import { isMatchingLogForMeetingAndUser } from "../utils/meetingUtils";
-import { completeTask, resetProfileToOnboarding } from "../firebaseService";
+import { completeTask, resetProfileToOnboarding, isUserEligibleForMeetingInBackend } from "../firebaseService";
 import { 
   Compass, 
   Sparkles, 
@@ -39,7 +39,6 @@ import {
   getLagosDateString,
   formatMeetingDates,
   formatExactJoinTime,
-  isKDCompulsoryForLevel,
   getUserAssignedMicroservices
 } from "../utils/trackUtils";
 
@@ -159,11 +158,21 @@ export default function Dashboard({
 
   const standupDetails = getStandupDetails(profile.track);
 
-  const getAttendanceForMeeting = (meetingId: string, meetingObj?: any) => {
-    const target = meetingObj || { id: meetingId, meetingId };
+  const getAttendanceForMeeting = (meetingIdOrObj: any, meetingObj?: any) => {
+    let target: any;
+    if (typeof meetingIdOrObj === "object" && meetingIdOrObj !== null) {
+      target = meetingIdOrObj;
+    } else if (meetingObj) {
+      target = meetingObj;
+    } else {
+      target = { id: meetingIdOrObj, meetingId: meetingIdOrObj };
+    }
     const matches = (attendance || []).filter((a: any) => isMatchingLogForMeetingAndUser(a, target, profile));
     if (matches.length === 0) return undefined;
-    const attendedOrLate = matches.find((a: any) => a.status === "Attended" || a.status === "Late");
+    const attendedOrLate = matches.find((a: any) => {
+      const s = (a.status || "").toLowerCase();
+      return !s.includes("miss") && !s.includes("absent");
+    });
     return attendedOrLate || matches[0];
   };
 
@@ -496,35 +505,9 @@ export default function Dashboard({
       return false;
     }
 
-    // A meeting is assigned if there is an explicit backend assignment linking this userId and meetingId
-    const isAssigned = (meetingAssignments || []).some(
-      (ma: any) => ma.meetingId === m.id && ma.userId === profile.id
-    );
+    if (profile.role === "admin") return true;
 
-    // Or check if the meeting is global (both tracks and levels eligibility criteria are empty)
-    const targetTracks = m.targetTeamTrackEligibility;
-    const isGlobalTrack = !targetTracks || (Array.isArray(targetTracks) && targetTracks.length === 0);
-    const rawLevels = m.userLevels !== undefined ? m.userLevels : m.trackId;
-    const isGlobalLevel = !rawLevels || (Array.isArray(rawLevels) && rawLevels.length === 0) || rawLevels === "All" || rawLevels === "";
-    const isGlobal = isGlobalTrack && isGlobalLevel;
-
-    // Direct match calculations for level & track
-    const levelMatch = isUserLevelEligible(userLevelValue, rawLevels);
-    const trackMatch = isTeamTrackEligible(userTrackValue, targetTracks);
-
-    // If tracks are specified and levels are specified, both must match
-    let isLiveEligible = false;
-    if (isGlobal) {
-      isLiveEligible = true;
-    } else if (!isGlobalTrack && !isGlobalLevel) {
-      isLiveEligible = trackMatch && levelMatch;
-    } else if (!isGlobalTrack) {
-      isLiveEligible = trackMatch;
-    } else {
-      isLiveEligible = levelMatch;
-    }
-
-    return isAssigned || isLiveEligible;
+    return isUserEligibleForMeetingInBackend(profile, m, meetingAssignments || []);
   });
 
   // Base list of un-scheduled static meetings has been cleared so they never display on any dashboard
@@ -683,7 +666,32 @@ export default function Dashboard({
     let attendanceColor = "";
     if (record) {
       const s = (record.status || "").toLowerCase();
-      if (s === "late" || s === "attended late" || s === "late check-in") {
+      let isVeryLate = s.includes("very late");
+      let isLate = !isVeryLate && s.includes("late");
+
+      if (record.timestamp && p.timeString) {
+        try {
+          const scheduledMins = parseMeetingTimeToMinutes(p.timeString, lagosToday);
+          const joinMins = getLagosMinutesPastMidnight(new Date(record.timestamp));
+          const diff = joinMins - scheduledMins;
+          const lateThresh = state?.attendancePunctualityConfig?.lateThresholdMinutes ?? 2;
+          const veryLateThresh = state?.attendancePunctualityConfig?.veryLateThresholdMinutes ?? 5;
+          if (diff > veryLateThresh) {
+            isVeryLate = true;
+            isLate = false;
+          } else if (diff > lateThresh) {
+            isLate = true;
+            isVeryLate = false;
+          }
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      if (isVeryLate) {
+        attendanceText = "⏱️ Very Late Check-In";
+        attendanceColor = "bg-orange-50 text-orange-800 border border-orange-200";
+      } else if (isLate) {
         attendanceText = "⚠️ Late Check-In";
         attendanceColor = "bg-amber-50 text-amber-800 border border-amber-200";
       } else if (s.includes("early")) {
@@ -697,8 +705,13 @@ export default function Dashboard({
         attendanceColor = "bg-emerald-50 text-emerald-800 border border-emerald-200";
       }
     } else {
-      attendanceText = "❌ Absent (Missed)";
-      attendanceColor = "bg-rose-50 text-rose-800 border border-rose-200";
+      if (meetingTimeStatus === "Upcoming" || meetingTimeStatus === "Live") {
+        attendanceText = "⏳ Pending Check-In";
+        attendanceColor = "bg-blue-50 text-blue-800 border border-blue-200";
+      } else {
+        attendanceText = "❌ Absent (Missed)";
+        attendanceColor = "bg-rose-50 text-rose-800 border border-rose-200";
+      }
     }
 
     return (
@@ -804,17 +817,17 @@ export default function Dashboard({
                 {attendanceText}
               </span>
             </div>
-          ) : meetingTimeStatus === "Live" && checkedIn ? (
+          ) : checkedIn ? (
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-[10px] font-bold">
                 ✓ Checked In
               </span>
               <button
                 onClick={() => handleJoinMeetingAction(p.id, p.link)}
-                className="px-3.5 py-1.5 text-[10.5px] font-extrabold rounded-lg shadow-3xs transition active:scale-97 cursor-pointer flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-750"
+                className="px-3.5 py-1.5 text-[10.5px] font-extrabold rounded-lg shadow-3xs transition active:scale-97 cursor-pointer flex items-center gap-1.5 bg-[#4B5E40] hover:bg-[#3d4d34] text-white"
               >
                 <Play className="w-2.5 h-2.5 fill-current shrink-0" />
-                Rejoin Session
+                Rejoin Meeting
               </button>
             </div>
           ) : (
@@ -1011,19 +1024,6 @@ export default function Dashboard({
                   <span className="w-2 h-2 rounded-full bg-[#4B5E40]"></span>
                   Knowledge Track Meetings
                 </h4>
-                {(() => {
-                  const userLevelVal = profile.learningLevel || profile.techExperience || "Apprentice level 1";
-                  const isComp = isKDCompulsoryForLevel(userLevelVal, state.kdInfo?.compulsoryLevels);
-                  return (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                      isComp 
-                        ? "bg-rose-100 text-rose-800 border border-rose-200" 
-                        : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                    }`}>
-                      {isComp ? "Compulsory Level" : "Optional Level"} ({userLevelVal})
-                    </span>
-                  );
-                })()}
               </div>
               {knowledgeMeetings.length === 0 ? (
                 <div className="p-4 text-center bg-gray-50/50 rounded-xl border border-dashed border-gray-200 text-[11px] text-gray-400 font-sans">
@@ -1514,8 +1514,8 @@ export default function Dashboard({
                   <div className="flex items-start gap-2 text-[11.5px]">
                     <CheckCircle className="w-4.5 h-4.5 text-[#4B5E40] shrink-0 mt-0.5" />
                     <div>
-                      <strong className="text-gray-900 font-bold block">3. Orientation Compliance Video Watch</strong>
-                      <span className="text-gray-550 text-[10.5px]">Compliance watch logs certified by the automated orientation tracker.</span>
+                      <strong className="text-gray-900 font-bold block">3. Workspace Induction & Compliance</strong>
+                      <span className="text-gray-550 text-[10.5px]">Induction and policy compliance verified for student workspace access.</span>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 text-[11.5px]">

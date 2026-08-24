@@ -92,7 +92,7 @@ export interface AttendanceRecord {
   meetingType: MeetingType | string;
   timestamp: string; // UTC ISO String
   joinedAtTime?: string; // e.g. "02:57:12 AM WAT"
-  status: "Attended" | "Late" | "Missed";
+  status: "Attended" | "Late" | "Very Late" | "Missed" | string;
   track: string;
   meetingDate?: string; // Optional: to link to a specific date instance
   date?: string;
@@ -407,9 +407,30 @@ export const DEFAULT_KD_COMPULSORY_LEVELS = [
   "Trainee",
   "Global Techie 0",
   "Global Techie 1",
+  "Global Techie 2",
+  "Global Techie 3",
   "Global Techie Level 0",
-  "Global Techie Level 1"
+  "Global Techie Level 1",
+  "Global Techie Level 2",
+  "Global Techie Level 3",
+  "Junior associate level 1",
+  "Junior associate level 2",
+  "Senior associate level 1",
+  "Mentor",
+  "Executive",
+  "Lead",
+  "All Techies"
 ];
+
+export interface AttendancePunctualityConfig {
+  lateThresholdMinutes: number; // default 2 (check-in > lateThresholdMinutes past start time marked Late)
+  veryLateThresholdMinutes: number; // default 5 (check-in > veryLateThresholdMinutes past start time marked Very Late)
+}
+
+export const defaultAttendancePunctualityConfig: AttendancePunctualityConfig = {
+  lateThresholdMinutes: 2,
+  veryLateThresholdMinutes: 5,
+};
 
 export const defaultKnowledgeDevelopmentInfo: KnowledgeDevelopmentInfo = {
   title: "Knowledge Development (KD) Microservice",
@@ -419,7 +440,7 @@ export const defaultKnowledgeDevelopmentInfo: KnowledgeDevelopmentInfo = {
   whyFacilitate: "• To build communication and presentation skills\n• To know at least one thing about everything in the organization\n• To learn more while obliged to facilitate, present and teach in the KD session\n• To develop pitching confidence\n• To learn the best use of technology\n• Finally, it serves as an avenue to dig deep in a certain field of interest",
   whyAttend: "• To know at least one thing about everything in the organization\n• To further advance knowledge in certain and various field\n• To show visibility and activeness at work\n• To meet with likemind people and industry peers\n• To understand and emulate what it takes to present and share knowledge.\n• Finally it serves as an avenue to dig deep in a certain field of interest.",
   sessionInfo: "• Knowledge Development sessions hold every Tuesday to Friday.\n• Sessions begin at 9:00 AM (WAT).\n• Sessions are conducted through the Meeting module.\n• The meeting link will be available only when a session has been scheduled.",
-  attendanceInfo: "• Attendance is compulsory for applicable Techie Levels (apprentices, interns, trainee, global techie level 0 and 1).\n• Attendance contributes to Knowledge Development KPIs.\n• Attendance is tracked automatically through the Meeting module.\n• Users cannot manually update their attendance.",
+  attendanceInfo: "• Attendance is mandatory for all users across all Techie Levels and tracks.\n• Attendance contributes to Knowledge Development KPIs.\n• Attendance is tracked automatically through the Meeting module.\n• Users cannot manually update their attendance.",
   presenterInfo: "• Submit a presentation topic 2 weeks before your scheduled date\n• Submit presentation slides and Presentation summary 1 week before presentation date\n• Record yourself sharing screen and making your presentation prior to your real presentation\n• Share this recorded video on your socials (this is called public artefact).\n• Share public artefact, presentation summary and slides on kd channel.",
   learningProgress: "• Users earn progress through active participation.\n• Presentation activities contribute to learning development.\n• Attendance contributes toward Knowledge Development KPIs.\n• Learning progress is tracked automatically.",
   meetingLink: "https://meet.jit.si/BincomDevCenterKDHub",

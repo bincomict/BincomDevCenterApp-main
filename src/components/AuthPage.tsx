@@ -53,7 +53,23 @@ export default function AuthPage({ onAuthSuccess, profiles }: AuthPageProps) {
         onAuthSuccess(profile);
       }, 150);
     } catch (err: any) {
-      setError(err.message || "Failed to find this staff or student profile on our registry.");
+      const msg = err.message || "";
+      if (
+        err.code === "auth/invalid-credential" ||
+        err.code === "auth/wrong-password" ||
+        err.code === "auth/user-not-found" ||
+        err.code === "auth/invalid-email" ||
+        msg.includes("invalid-credential") ||
+        msg.includes("auth/invalid-credential") ||
+        msg.includes("wrong-password") ||
+        msg.includes("user-not-found") ||
+        msg.includes("invalid-email") ||
+        msg.includes("Firebase:")
+      ) {
+        setError("Incorrect password/email, please try again.");
+      } else {
+        setError(msg || "Incorrect password/email, please try again.");
+      }
       setLoading(false);
     }
   };

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Profile } from "../types";
+import { FEATURE_FLAGS } from "../featureFlags";
 import { 
   Users, 
   Video, 
@@ -26,7 +27,7 @@ interface SidebarNavProps {
   microserviceOwners?: Record<string, string>;
 }
 
-const adminSubTabs = [
+const allAdminSubTabs = [
   { id: "funnel", label: "Operations Funnel" },
   { id: "reviews", label: "Student Validation & Reviews" },
   { id: "drills", label: "Weekly Drills" },
@@ -44,6 +45,12 @@ const adminSubTabs = [
   { id: "microservices_config", label: "Microservices Config" },
   { id: "pathways_config", label: "Career Pathways Config" },
 ];
+
+const meetingAdminTabIds = ["meetings", "attendance_history", "cron", "sync_logs"];
+
+const adminSubTabs = FEATURE_FLAGS.ENABLE_MEETINGS_ONLY
+  ? allAdminSubTabs.filter((tab) => meetingAdminTabIds.includes(tab.id))
+  : allAdminSubTabs;
 
 const hubSubTabs = [
   { id: "meetings", label: "Active Sessions" },
@@ -181,10 +188,7 @@ export default function SidebarNav({
                 {adminSubTabs.map((sub) => (
                   <button
                     key={sub.id}
-                    onClick={() => {
-                      setAdminTab?.(sub.id);
-                      if (onClose) onClose();
-                    }}
+                    onClick={() => setAdminTab?.(sub.id)}
                     className={`flex items-center gap-2.5 w-full text-xs text-left py-2 px-3 rounded-xl transition cursor-pointer ${
                       adminTab === sub.id
                         ? "bg-white text-[#4B5E40] shadow font-bold"
@@ -200,7 +204,7 @@ export default function SidebarNav({
           ) : (
             /* Trainee Mode: Show original Trainee navigation */
             <>
-              {isMentorUser && (
+              {!FEATURE_FLAGS.ENABLE_MEETINGS_ONLY && isMentorUser && (
                 <div className="space-y-1">
                   <button
                     id="nav-mentor-dashboard-btn"
@@ -216,7 +220,7 @@ export default function SidebarNav({
                 </div>
               )}
 
-              {isMicroserviceOwnerUser && (
+              {!FEATURE_FLAGS.ENABLE_MEETINGS_ONLY && isMicroserviceOwnerUser && (
                 <div className="space-y-1">
                   <button
                     id="nav-microservice-owner-dashboard-btn"
@@ -258,7 +262,7 @@ export default function SidebarNav({
                     }`}
                   >
                     <Video className="w-4 h-4 shrink-0" />
-                    <span className="flex-1 truncate">Meetings</span>
+                    <span className="flex-1 truncate">Meetings Hub</span>
                   </button>
                   <button
                     type="button"
@@ -291,95 +295,99 @@ export default function SidebarNav({
                 )}
               </div>
 
-              <div className="space-y-1">
-                <div className="flex items-center justify-between w-full gap-1">
-                  <button
-                    id="nav-microservices-btn"
-                    onClick={() => {
-                      handleTabClick("microservices");
-                      setIsMicroservicesExpanded(true);
-                    }}
-                    className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left ${
-                      activeTab === "microservices" 
-                        ? "bg-white text-[#4B5E40] shadow font-bold" 
-                        : "text-white/75 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Layers className="w-4 h-4 shrink-0" />
-                    <span className="flex-1 truncate">Microservice Modules</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsMicroservicesExpanded(!isMicroservicesExpanded)}
-                    className={`p-2 rounded-xl transition cursor-pointer text-white/70 hover:text-white hover:bg-white/10 shrink-0`}
-                    title={isMicroservicesExpanded ? "Collapse Microservices Menu" : "Expand Microservices Menu"}
-                  >
-                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMicroservicesExpanded ? "rotate-180" : ""}`} />
-                  </button>
-                </div>
-                {isMicroservicesExpanded && (
-                  <div className="ml-4 pl-2.5 border-l border-white/20 space-y-0.5 mt-1 animate-fade-in" id="microservices-sidebar-sublist">
-                    {microservicesSubTabs.map((sub) => (
+              {!FEATURE_FLAGS.ENABLE_MEETINGS_ONLY && (
+                <>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between w-full gap-1">
                       <button
-                        key={sub.id}
+                        id="nav-microservices-btn"
                         onClick={() => {
-                          setActiveSubTab?.(sub.id as any);
                           handleTabClick("microservices");
+                          setIsMicroservicesExpanded(true);
                         }}
-                        className={`block w-full text-[10.5px] text-left py-1 px-2 rounded-lg transition cursor-pointer ${
-                          activeSubTab === sub.id && activeTab === "microservices"
-                            ? "bg-white/15 text-white font-semibold shadow-3xs"
-                            : "text-white/60 hover:text-white hover:bg-white/5"
+                        className={`flex-1 flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left ${
+                          activeTab === "microservices" 
+                            ? "bg-white text-[#4B5E40] shadow font-bold" 
+                            : "text-white/75 hover:bg-white/10 hover:text-white"
                         }`}
                       >
-                        {sub.label}
+                        <Layers className="w-4 h-4 shrink-0" />
+                        <span className="flex-1 truncate">Microservice Modules</span>
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => setIsMicroservicesExpanded(!isMicroservicesExpanded)}
+                        className={`p-2 rounded-xl transition cursor-pointer text-white/70 hover:text-white hover:bg-white/10 shrink-0`}
+                        title={isMicroservicesExpanded ? "Collapse Microservices Menu" : "Expand Microservices Menu"}
+                      >
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMicroservicesExpanded ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    {isMicroservicesExpanded && (
+                      <div className="ml-4 pl-2.5 border-l border-white/20 space-y-0.5 mt-1 animate-fade-in" id="microservices-sidebar-sublist">
+                        {microservicesSubTabs.map((sub) => (
+                          <button
+                            key={sub.id}
+                            onClick={() => {
+                              setActiveSubTab?.(sub.id as any);
+                              handleTabClick("microservices");
+                            }}
+                            className={`block w-full text-[10.5px] text-left py-1 px-2 rounded-lg transition cursor-pointer ${
+                              activeSubTab === sub.id && activeTab === "microservices"
+                                ? "bg-white/15 text-white font-semibold shadow-3xs"
+                                : "text-white/60 hover:text-white hover:bg-white/5"
+                            }`}
+                          >
+                            {sub.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div className="space-y-1">
-                <button
-                  id="nav-projects-btn"
-                  onClick={() => handleTabClick("projects")}
-                  className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
-                    activeTab === "projects" 
-                      ? "bg-white text-[#4B5E40] shadow font-bold" 
-                      : "text-white/75 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <Users className="w-4 h-4 shrink-0" /> Project repository
-                </button>
-              </div>
+                  <div className="space-y-1">
+                    <button
+                      id="nav-projects-btn"
+                      onClick={() => handleTabClick("projects")}
+                      className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
+                        activeTab === "projects" 
+                          ? "bg-white text-[#4B5E40] shadow font-bold" 
+                          : "text-white/75 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      <Users className="w-4 h-4 shrink-0" /> Project repository
+                    </button>
+                  </div>
 
-              <div className="space-y-1">
-                <button
-                  id="nav-leaderboard-btn"
-                  onClick={() => handleTabClick("leaderboard")}
-                  className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
-                    activeTab === "leaderboard" 
-                      ? "bg-white text-[#4B5E40] shadow font-bold" 
-                      : "text-white/75 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <LineChart className="w-4 h-4 shrink-0" /> Punctuality Leaderboard
-                </button>
-              </div>
+                  <div className="space-y-1">
+                    <button
+                      id="nav-leaderboard-btn"
+                      onClick={() => handleTabClick("leaderboard")}
+                      className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
+                        activeTab === "leaderboard" 
+                          ? "bg-white text-[#4B5E40] shadow font-bold" 
+                          : "text-white/75 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      <LineChart className="w-4 h-4 shrink-0" /> Punctuality Leaderboard
+                    </button>
+                  </div>
 
-              <div className="space-y-1">
-                <button
-                  id="nav-pathway-btn"
-                  onClick={() => handleTabClick("pathway")}
-                  className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
-                    activeTab === "pathway" 
-                      ? "bg-white text-[#4B5E40] shadow font-bold" 
-                      : "text-white/75 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <Award className="w-4 h-4 shrink-0" /> Career Pathways Setup
-                </button>
-              </div>
+                  <div className="space-y-1">
+                    <button
+                      id="nav-pathway-btn"
+                      onClick={() => handleTabClick("pathway")}
+                      className={`nav-link flex items-center gap-2.5 px-3 py-2 text-xs rounded-xl transition cursor-pointer text-left w-full ${
+                        activeTab === "pathway" 
+                          ? "bg-white text-[#4B5E40] shadow font-bold" 
+                          : "text-white/75 hover:bg-white/10 hover:text-white"
+                      }`}
+                    >
+                      <Award className="w-4 h-4 shrink-0" /> Career Pathways Setup
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </nav>
@@ -393,8 +401,7 @@ export default function SidebarNav({
             profile.role === "admin" ||
             profile.role === "mentor" ||
             Boolean(isOwner) ||
-            String(profile.learningLevel || "").toLowerCase().includes("mentor") ||
-            String(profile.learningLevel || "").toLowerCase().includes("admin");
+            String(profile.learningLevel || "").toLowerCase().includes("mentor");
 
           if (!isMentorOrAdmin) return null;
 

@@ -26,8 +26,9 @@ import {
   sendPasswordResetEmail
 } from "firebase/auth";
 import { db, auth } from "./firebase";
-import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation } from "./types";
+import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation, AttendancePunctualityConfig, defaultAttendancePunctualityConfig } from "./types";
 import { isMatchingLogForMeetingAndUser, isMatchingLogForMeeting } from "./utils/meetingUtils";
+import { isUserTrackEligibleForMeeting, isUserLevelEligibleForMeeting, getCleanTrackName } from "./utils/trackUtils";
 
 export enum OperationType {
   CREATE = 'create',
@@ -100,11 +101,19 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
 
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  const isNetworkOrAuthError = 
+    errMsg.toLowerCase().includes("network-request-failed") ||
+    errMsg.toLowerCase().includes("connection failed") ||
+    errMsg.toLowerCase().includes("offline") ||
+    errMsg.toLowerCase().includes("unavailable");
 
   if (isPermissionError) {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
     throw new Error(JSON.stringify(errInfo));
+  } else if (isNetworkOrAuthError) {
+    console.warn('Firestore network/offline/auth state warning:', errMsg, path ? `Path: ${path}` : '');
   } else {
+    console.error('Firestore Error: ', JSON.stringify(errInfo));
     console.warn('Gracefully handled non-permission Firestore transport/offline error:', errMsg);
   }
 }
@@ -153,19 +162,22 @@ export const parseMeetingTimeToMinutes = (timeStr: string): number => {
   if (!timeStr) return 0;
   let clean = timeStr.replace(/\s*WAT\s*$/i, "").trim().toUpperCase();
   
-  const match = clean.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+  // Extract start time segment before any hyphen or dash
+  const firstPart = clean.split("-")[0].trim();
+  const hasPM = clean.includes("PM");
+  const hasAM = clean.includes("AM");
+
+  const match = firstPart.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
   if (!match) return 0;
   
   let hours = parseInt(match[1], 10);
   const minutes = match[2] ? parseInt(match[2], 10) : 0;
-  const ampm = match[3];
+  const partAmpm = match[3] || (hasPM ? "PM" : (hasAM ? "AM" : undefined));
   
-  if (ampm) {
-    if (ampm === "PM" && hours < 12) hours += 12;
-    if (ampm === "AM" && hours === 12) hours = 0;
-  } else {
-    if (hours < 8) hours += 12;
-  }
+  if (partAmpm === "PM" && hours < 12) hours += 12;
+  if (partAmpm === "AM" && hours === 12) hours = 0;
+  if (!partAmpm && hours < 8) hours += 12;
+
   return hours * 60 + minutes;
 };
 
@@ -208,14 +220,6 @@ export const listenToAuthChanges = (onUserLoaded: (profile: Profile | null) => v
         const cachedDoc = await getDoc(doc(db, "profiles", cachedProfileId));
         if (cachedDoc.exists()) {
           const profileData = cachedDoc.data() as Profile;
-          const lowercaseEmail = (profileData.email || "").trim().toLowerCase();
-          if (["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes(lowercaseEmail)) {
-            if (profileData.role !== "admin" || profileData.status !== "admin") {
-              profileData.role = "admin";
-              profileData.status = "admin";
-              await setDoc(doc(db, "profiles", profileData.id), profileData);
-            }
-          }
           onUserLoaded(profileData);
           return;
         }
@@ -258,19 +262,10 @@ export const listenToAuthChanges = (onUserLoaded: (profile: Profile | null) => v
         }
 
         if (profileData) {
-          const lowercaseEmail = (profileData.email || "").trim().toLowerCase();
-          if (["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes(lowercaseEmail)) {
-            if (profileData.role !== "admin" || profileData.status !== "admin") {
-              profileData.role = "admin";
-              profileData.status = "admin";
-              await setDoc(doc(db, "profiles", user.uid), profileData);
-            }
-          }
           localStorage.setItem("bincom_active_profile_id", profileData.id);
           onUserLoaded(profileData);
         } else if (!user.isAnonymous) {
           // Fallback or create minimal profile for non-anonymous user
-          const isEmailAdmin = ["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes((user.email || "").trim().toLowerCase());
           const newProfile: Profile = {
             id: user.uid,
             email: user.email || "",
@@ -280,8 +275,8 @@ export const listenToAuthChanges = (onUserLoaded: (profile: Profile | null) => v
             occupation: "",
             techExperience: "Beginner",
             track: "All",
-            role: isEmailAdmin ? "admin" : "user",
-            status: isEmailAdmin ? "admin" : "onboarding",
+            role: "user",
+            status: "onboarding",
             joinedAt: new Date().toISOString()
           };
           await setDoc(doc(db, "profiles", user.uid), newProfile);
@@ -301,11 +296,11 @@ export const listenToAuthChanges = (onUserLoaded: (profile: Profile | null) => v
 };
 
 // --- Realtime Database Sync Engine ---
-export const isUserEligibleForMeetingInBackend = (user: any, meeting: any, assignments: any[]): boolean => {
-  if (user.role === "admin") return false;
+export const isUserEligibleForMeetingInBackend = (user: any, meeting: any, assignments: any[] = []): boolean => {
+  if (!user || user.role === "admin") return false;
 
-  // 1. Explicitly assigned
-  const isAssigned = assignments.some((ma: any) => {
+  // 1. Explicitly assigned via backend meetingAssignments
+  const isAssigned = (assignments || []).some((ma: any) => {
     if (!ma) return false;
     const maMId = String(ma.meetingId || "").toLowerCase().trim();
     const maUId = String(ma.userId || "").toLowerCase().trim();
@@ -322,45 +317,26 @@ export const isUserEligibleForMeetingInBackend = (user: any, meeting: any, assig
   });
   if (isAssigned) return true;
 
-  // 2. User Level & Track Eligibility
+  // 2. Direct assigned users explicitly specified on the meeting document
+  if (meeting.assignedUserIds && Array.isArray(meeting.assignedUserIds) && meeting.assignedUserIds.length > 0) {
+    return (
+      meeting.assignedUserIds.includes(user.id) ||
+      meeting.assignedUserIds.includes(user.uid) ||
+      meeting.assignedUserIds.includes(user.username)
+    );
+  }
+
+  // 3. User Level & Track Eligibility
   const userLevelValue = user.learningLevel || user.techExperience || "Apprentice level 1";
   const userTrackValue = user.track || "";
 
-  const targetTracks = meeting.targetTeamTrackEligibility || [];
-  const isGlobalTrack = !targetTracks || targetTracks.length === 0 || targetTracks.includes("All") || targetTracks.includes("All Tracks Eligibility");
-  const rawLevels = meeting.userLevels || meeting.trackId || [];
-  const isGlobalLevel = !rawLevels || (Array.isArray(rawLevels) && rawLevels.length === 0) || rawLevels.includes("All") || rawLevels.includes("All User Eligible") || rawLevels.includes("All User Level");
-  const isGlobal = isGlobalTrack && isGlobalLevel;
+  const targetTracks = meeting.targetTeamTrackEligibility || meeting.targetTracks || meeting.targetTeams || (meeting.track ? [meeting.track] : []);
+  const rawLevels = meeting.userLevels !== undefined ? meeting.userLevels : meeting.trackId;
 
-  if (isGlobal) return true;
+  const trackMatch = isUserTrackEligibleForMeeting(userTrackValue, targetTracks);
+  const levelMatch = isUserLevelEligibleForMeeting(userLevelValue, rawLevels);
 
-  const trackMatch = (() => {
-    if (userTrackValue.trim().toLowerCase() === "all") return true;
-    if (!targetTracks || targetTracks.length === 0) return true;
-    return targetTracks.some((t: string) => {
-      const mt = t.trim().toLowerCase();
-      const ut = userTrackValue.trim().toLowerCase();
-      return mt === ut || mt === "all" || mt.includes(ut) || ut.includes(mt);
-    });
-  })();
-
-  const levelMatch = (() => {
-    if (!rawLevels || rawLevels.length === 0) return true;
-    const levelsArr = Array.isArray(rawLevels) ? rawLevels : [rawLevels];
-    return levelsArr.some((l: string) => {
-      const mLevel = l.trim().toLowerCase();
-      const uL = userLevelValue.trim().toLowerCase();
-      return mLevel === uL || mLevel.includes(uL) || uL.includes(mLevel);
-    });
-  })();
-
-  if (!isGlobalTrack && !isGlobalLevel) {
-    return trackMatch && levelMatch;
-  } else if (!isGlobalTrack) {
-    return trackMatch;
-  } else {
-    return levelMatch;
-  }
+  return trackMatch && levelMatch;
 };
 
 export const formatMinutesToMeetingTime = (totalMinutes: number): string => {
@@ -378,7 +354,8 @@ export const autoArchiveCompletedMeetings = async (
   profiles: any[] = [],
   attendance: any[] = [],
   assignments: any[] = [],
-  meetingHistory: any[] = []
+  meetingHistory: any[] = [],
+  punctualityConfig?: AttendancePunctualityConfig
 ): Promise<void> => {
   if (isQuotaExhausted) return;
   if (!meetings || meetings.length === 0) return;
@@ -420,31 +397,18 @@ export const autoArchiveCompletedMeetings = async (
     const endTimeMinutes = scheduledMinutes + durationMinutes;
 
     let isMeetingEnded = false;
-    let isPast5MinutesAfterCompletion = false;
 
     if (latestDate < todayStr) {
       isMeetingEnded = true;
-      isPast5MinutesAfterCompletion = true;
     } else if (latestDate === todayStr) {
-      if (currentMinutes >= endTimeMinutes + 5) {
+      if (currentMinutes >= endTimeMinutes) {
         isMeetingEnded = true;
-        isPast5MinutesAfterCompletion = true;
-      } else if (currentMinutes >= endTimeMinutes) {
-        isMeetingEnded = true;
-      }
-    }
-
-    // Check if updatedAt exists on a Completed meeting and 5 minutes have passed
-    if (statusLower === "completed" && m.updatedAt) {
-      const msSinceUpdate = now.getTime() - new Date(m.updatedAt).getTime();
-      if (!isNaN(msSinceUpdate) && msSinceUpdate >= 5 * 60 * 1000) {
-        isPast5MinutesAfterCompletion = true;
       }
     }
 
     let targetStatus = m.status || "Upcoming";
-    if (isPast5MinutesAfterCompletion) {
-      targetStatus = "Archived";
+    if (statusLower === "cancelled" || statusLower === "archived") {
+      targetStatus = m.status;
     } else if (isMeetingEnded) {
       targetStatus = "Completed";
     }
@@ -518,6 +482,26 @@ export const autoArchiveCompletedMeetings = async (
     }
 
     const eligibleUsers = profiles.filter(u => isUserEligibleForMeetingInBackend(u, m, assignments));
+    const eligibleUserIds = new Set(eligibleUsers.map(u => u.id));
+
+    // Clean up any stale auto-generated missed records for users who are NOT eligible for this meeting
+    profiles.forEach(user => {
+      if (!eligibleUserIds.has(user.id)) {
+        const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user));
+        userAttLogs.forEach(a => {
+          const s = (a.status || "").toLowerCase();
+          if ((s.includes("miss") || s.includes("absent") || (a.id && a.id.startsWith("att_missed_"))) && a.id) {
+            currentBatch.delete(doc(db, "attendance", a.id));
+            batchCount++;
+            if (batchCount >= writeBatchSize) {
+              batches.push(currentBatch);
+              currentBatch = writeBatch(db);
+              batchCount = 0;
+            }
+          }
+        });
+      }
+    });
     
     eligibleUsers.forEach(user => {
       const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user));
@@ -527,7 +511,10 @@ export const autoArchiveCompletedMeetings = async (
       });
 
       if (hasRealAttendance) {
-        // Clean up any stale auto-generated missed records for this user and meeting
+        // Clean up any stale auto-generated missed records and re-verify attendance status punctuality classification
+        const lateThresh = punctualityConfig?.lateThresholdMinutes ?? 2;
+        const veryLateThresh = punctualityConfig?.veryLateThresholdMinutes ?? 5;
+
         userAttLogs.forEach(a => {
           const s = (a.status || "").toLowerCase();
           if (s.includes("miss") || s.includes("absent")) {
@@ -538,6 +525,29 @@ export const autoArchiveCompletedMeetings = async (
                 batches.push(currentBatch);
                 currentBatch = writeBatch(db);
                 batchCount = 0;
+              }
+            }
+          } else if (a.timestamp && a.id) {
+            const scheduledTimeStr = a.scheduledStartTime || m.scheduledStartTime || m.timeString || m.time || "09:00 AM";
+            const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+            const joinMins = getLagosMinutesPastMidnight(new Date(a.timestamp));
+            if (scheduledMins > 0 && joinMins > 0) {
+              const diff = joinMins - scheduledMins;
+              let expectedStatus = "Attended";
+              if (diff > veryLateThresh) {
+                expectedStatus = "Very Late";
+              } else if (diff > lateThresh) {
+                expectedStatus = "Late";
+              }
+
+              if (a.status !== expectedStatus) {
+                currentBatch.update(doc(db, "attendance", a.id), { status: expectedStatus, updatedAt: new Date().toISOString() });
+                batchCount++;
+                if (batchCount >= writeBatchSize) {
+                  batches.push(currentBatch);
+                  currentBatch = writeBatch(db);
+                  batchCount = 0;
+                }
               }
             }
           }
@@ -727,7 +737,8 @@ export const subscribeToAllState = (
     tasks: [],
     microservices: [],
     careerPathways: null,
-    autoMidnightSyncEnabled: false
+    autoMidnightSyncEnabled: false,
+    attendancePunctualityConfig: defaultAttendancePunctualityConfig
   };
 
   const isAdmin = userProfile?.role === "admin";
@@ -839,6 +850,7 @@ export const subscribeToAllState = (
           state.careerPathways = appConfig.careerPathways || null;
           state.autoMidnightSyncEnabled = appConfig.autoMidnightSyncEnabled !== undefined ? appConfig.autoMidnightSyncEnabled : false;
           state.kdInfo = appConfig.kdInfo || defaultKnowledgeDevelopmentInfo;
+          state.attendancePunctualityConfig = appConfig.attendancePunctualityConfig || defaultAttendancePunctualityConfig;
         }
       } else if (colName === "profiles" && !isAdmin) {
         // Standard user: merge real-time update of own profile with one-time fetched profiles list
@@ -912,86 +924,21 @@ export const subscribeToAllState = (
           return false;
         }
 
-        // Check assigned
-        const isAssigned = (state.meetingAssignments || []).some(
-          (ma: any) => ma.meetingId === m.id && ma.userId === userId
-        );
-
-        // Check user levels and tracks
-        const userLevelValue = userProfile.learningLevel || userProfile.techExperience || "Apprentice level 1";
-        const userTrackValue = userProfile.track || "";
-
-        const targetTracks = m.targetTeamTrackEligibility;
-        const isGlobalTrack = !targetTracks || (Array.isArray(targetTracks) && targetTracks.length === 0);
-        const rawLevels = m.userLevels !== undefined ? m.userLevels : m.trackId;
-        const isGlobalLevel = !rawLevels || (Array.isArray(rawLevels) && rawLevels.length === 0) || rawLevels === "All" || rawLevels === "";
-        const isGlobal = isGlobalTrack && isGlobalLevel;
-
-        const isUserLevelEligible = (uLevel: string, mLevels: any): boolean => {
-          const checkLevel = uLevel || "Apprentice level 1";
-          const rawL = mLevels !== undefined ? mLevels : "All";
-          if (!rawL || (Array.isArray(rawL) && rawL.length === 0) || rawL === "All" || rawL === "") {
-            return true;
-          }
-          if (Array.isArray(rawL)) {
-            const filtered = rawL.filter(l => l && l !== "All User Eligible" && l !== "All User Level" && l !== "All Tracks Eligibility");
-            if (filtered.length === 0) {
-              return true;
-            }
-            return filtered.some((l: string) => {
-              const mLevel = l.trim().toLowerCase();
-              const uL = checkLevel.trim().toLowerCase();
-              return mLevel === uL || mLevel.includes(uL) || uL.includes(mLevel);
-            });
-          }
-          if (rawL === "All User Eligible" || rawL === "All User Level" || rawL === "All Tracks Eligibility") {
-            return true;
-          }
-          const mLevel = String(rawL).trim().toLowerCase();
-          const uL = checkLevel.trim().toLowerCase();
-          return mLevel === uL || mLevel.includes(uL) || uL.includes(mLevel);
-        };
-
-        const isTeamTrackEligible = (uTrack: string, mTracks: any): boolean => {
-          const checkTrack = uTrack || "";
-          if (checkTrack.trim().toLowerCase() === "all") {
-            return true;
-          }
-          if (!mTracks || (Array.isArray(mTracks) && mTracks.length === 0)) {
-            return true;
-          }
-          if (Array.isArray(mTracks)) {
-            return mTracks.some((t: string) => {
-              const mTrack = t.trim().toLowerCase();
-              const uT = checkTrack.trim().toLowerCase();
-              return mTrack === uT || uT === "all";
-            });
-          }
-          const mTrack = String(mTracks).trim().toLowerCase();
-          const uT = checkTrack.trim().toLowerCase();
-          return mTrack === uT || uT === "all";
-        };
-
-        const levelMatch = isUserLevelEligible(userLevelValue, rawLevels);
-        const trackMatch = isTeamTrackEligible(userTrackValue, targetTracks);
-
-        let isLiveEligible = false;
-        if (isGlobal) {
-          isLiveEligible = true;
-        } else if (!isGlobalTrack && !isGlobalLevel) {
-          isLiveEligible = trackMatch && levelMatch;
-        } else if (!isGlobalTrack) {
-          isLiveEligible = trackMatch;
-        } else {
-          isLiveEligible = levelMatch;
-        }
-
-        return isAssigned || isLiveEligible;
+        return isUserEligibleForMeetingInBackend(userProfile, m, state.meetingAssignments || []);
       });
     }
 
     // Filter attendance and history for users
-    let returnedAttendance = [...state.attendance];
+    let returnedAttendance = [...state.attendance].map(a => {
+      const matchProf = state.profiles.find(p => p.id === a.userId || (p.username && a.username && p.username.toLowerCase() === a.username.toLowerCase())) || (a.userId === userId ? userProfile : null);
+      const fullName = (matchProf && matchProf.fullName && matchProf.fullName.trim() !== "")
+        ? matchProf.fullName
+        : (a.fullName && a.fullName.trim() !== "" ? a.fullName : (matchProf?.username || a.username || "Student"));
+      return {
+        ...a,
+        fullName
+      };
+    });
     let returnedProfiles = [...state.profiles];
     let returnedHistory = [...state.meetingHistory];
     let returnedAuditLogs = [] as any[];
@@ -1056,11 +1003,30 @@ export const subscribeToAllState = (
     };
 
     onStateUpdated(compiled);
+
+    // Auto-check for completed meetings and update status
+    if (
+      !isQuotaExhausted &&
+      compiled.meetings &&
+      compiled.meetings.length > 0 &&
+      compiled.profiles &&
+      compiled.profiles.length > 0
+    ) {
+      autoArchiveCompletedMeetings(
+        compiled.meetings,
+        compiled.profiles,
+        compiled.attendance,
+        compiled.meetingAssignments,
+        compiled.meetingHistory,
+        compiled.attendancePunctualityConfig
+      ).catch((err) =>
+        console.error("Auto archive state check error:", err)
+      );
+    }
   };
 
   const autoArchiveCheckInterval = setInterval(() => {
     if (isQuotaExhausted) return;
-    if (!isAdmin) return;
     if (
       state.meetings &&
       state.meetings.length > 0 &&
@@ -1072,12 +1038,13 @@ export const subscribeToAllState = (
         state.profiles,
         state.attendance,
         state.meetingAssignments,
-        state.meetingHistory
+        state.meetingHistory,
+        state.attendancePunctualityConfig
       ).catch((err) =>
         console.error("Auto archive interval check error:", err)
       );
     }
-  }, 900000);
+  }, 60000);
 
   const checkInterval = setInterval(() => {
     if (isQuotaExhausted) {
@@ -1211,10 +1178,21 @@ export const runMidnightSyncIfNeeded = async (
     return true;
 
   } catch (err: any) {
-    console.error("[midnightSync] Transaction or lock-based execution failed:", err);
-    // Basic backoff / safe warning
-    if (err.code === "resource-exhausted" || err.message?.toLowerCase().includes("quota")) {
+    const errMsg = String(err?.message || err).toLowerCase();
+    const isNetworkOrOffline = 
+      errMsg.includes("connection failed") || 
+      errMsg.includes("offline") || 
+      errMsg.includes("network") ||
+      errMsg.includes("unavailable") ||
+      err?.code === "unavailable" ||
+      err?.code === "auth/network-request-failed";
+
+    if (isNetworkOrOffline) {
+      console.warn("[midnightSync] Lock transaction skipped due to transient network/connection state:", err?.message || err);
+    } else if (err?.code === "resource-exhausted" || errMsg.includes("quota")) {
       console.warn("[midnightSync] Resource exhausted / quota exceeded in lock transaction. Skipping sync check...");
+    } else {
+      console.error("[midnightSync] Transaction or lock-based execution failed:", err);
     }
     return false;
   }
@@ -1462,6 +1440,16 @@ export const deleteMeetingType = async (typeName: string): Promise<void> => {
   if (d.exists()) {
     const existing = d.data().meetingTypes || [];
     await updateDoc(docRef, { meetingTypes: existing.filter((t: string) => t !== typeName) });
+  }
+};
+
+export const saveAttendancePunctualityConfig = async (config: AttendancePunctualityConfig): Promise<void> => {
+  const docRef = doc(db, "metadata", "app_config");
+  const d = await getDoc(docRef);
+  if (d.exists()) {
+    await updateDoc(docRef, { attendancePunctualityConfig: config });
+  } else {
+    await setDoc(docRef, { meetingTypes: [], kdCounts: {}, microserviceOwners: {}, attendancePunctualityConfig: config });
   }
 };
 
@@ -3063,6 +3051,10 @@ export const deleteMeeting = async (
   }
 };
 
+
+
+
+
 export const submitStandup = async (standupData: any): Promise<void> => {
   await addDoc(collection(db, "standups"), {
     ...standupData,
@@ -3169,7 +3161,7 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   // Determine punctuality status
   const now = new Date();
   const todayStr = getLagosDateString(now);
-  const scheduledTimeStr = meeting.timeString || (meeting as any).time || (meeting as any).scheduledStartTime || (meeting as any).startTime || "09:00 AM";
+  const scheduledTimeStr = (meeting as any).scheduledStartTime || meeting.timeString || (meeting as any).time || (meeting as any).startTime || "09:00 AM";
   const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
   const currentMinutes = getLagosMinutesPastMidnight(now);
 
@@ -3178,8 +3170,24 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
   const endTimeMinutes = scheduledMinutes + durationMinutes;
 
-  let status: "Attended" | "Late" | "Missed" = "Attended";
-  if (currentMinutes > scheduledMinutes + 5) {
+  // Read configurable punctuality thresholds
+  let lateThreshold = 2;
+  let veryLateThreshold = 5;
+  try {
+    const appConfigDoc = await getDoc(doc(db, "metadata", "app_config"));
+    if (appConfigDoc.exists() && appConfigDoc.data()?.attendancePunctualityConfig) {
+      const cfg = appConfigDoc.data().attendancePunctualityConfig;
+      if (typeof cfg.lateThresholdMinutes === "number") lateThreshold = cfg.lateThresholdMinutes;
+      if (typeof cfg.veryLateThresholdMinutes === "number") veryLateThreshold = cfg.veryLateThresholdMinutes;
+    }
+  } catch (err) {
+    // Fall back to defaults (2m and 5m) if offline
+  }
+
+  let status: "Attended" | "Late" | "Very Late" | "Missed" | string = "Attended";
+  if (currentMinutes > scheduledMinutes + veryLateThreshold) {
+    status = "Very Late";
+  } else if (currentMinutes > scheduledMinutes + lateThreshold) {
     status = "Late";
   }
 
@@ -3250,7 +3258,7 @@ export const adminUpdateAttendance = async (
   targetUserId: string,
   meetingId: string,
   meetingDate: string,
-  newStatus: "Attended" | "Late" | "Missed"
+  newStatus: "Attended" | "Late" | "Very Late" | "Missed" | string
 ): Promise<void> => {
   const adminDoc = await getDoc(doc(db, "profiles", adminUserId));
   if (!adminDoc.exists() || adminDoc.data().role !== "admin") {
@@ -3380,7 +3388,7 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
     const q = query(collection(db, "profiles"), where("username", "==", identifier.trim().toLowerCase()));
     const snapshot = await getDocs(q);
     if (snapshot.empty) {
-      throw new Error("Failed to find this staff or student profile on our registry.");
+      throw new Error("Incorrect password/email, please try again.");
     }
     const userDoc = snapshot.docs[0];
     targetProfile = userDoc.data() as Profile;
@@ -3408,7 +3416,6 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
     }
 
     if (!profileData) {
-      const isEmailAdmin = ["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes((user.email || "").trim().toLowerCase());
       profileData = {
         id: user.uid,
         email: user.email || email,
@@ -3418,26 +3425,33 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
         occupation: "",
         techExperience: "Beginner",
         track: "All",
-        role: isEmailAdmin ? "admin" : "user",
-        status: isEmailAdmin ? "admin" : "onboarding",
+        role: "user",
+        status: "onboarding",
         joinedAt: new Date().toISOString()
       };
       await setDoc(doc(db, "profiles", user.uid), profileData);
-    }
-
-    const lowercaseEmail = (profileData.email || "").trim().toLowerCase();
-    if (["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes(lowercaseEmail)) {
-      if (profileData.role !== "admin" || profileData.status !== "admin") {
-        profileData.role = "admin";
-        profileData.status = "admin";
-        await setDoc(doc(db, "profiles", profileData.id), profileData);
-      }
     }
 
     localStorage.setItem("bincom_active_profile_id", profileData.id);
     return profileData;
 
   } catch (error: any) {
+    if (
+      error.code === "auth/invalid-credential" ||
+      error.code === "auth/wrong-password" ||
+      error.code === "auth/user-not-found" ||
+      error.code === "auth/invalid-email" ||
+      (error.message && (
+        error.message.includes("invalid-credential") ||
+        error.message.includes("wrong-password") ||
+        error.message.includes("user-not-found") ||
+        error.message.includes("invalid-email") ||
+        error.message.includes("auth/invalid-credential")
+      ))
+    ) {
+      throw new Error("Incorrect password/email, please try again.");
+    }
+
     if (
       error.code === "auth/operation-not-allowed" ||
       error.code === "auth/admin-restricted-operation" ||
@@ -3460,19 +3474,11 @@ export const loginUser = async (identifier: string, passwordStr: string): Promis
       }
 
       if (targetProfile) {
-        const lowercaseEmail = (targetProfile.email || "").trim().toLowerCase();
-        if (["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes(lowercaseEmail)) {
-          if (targetProfile.role !== "admin" || targetProfile.status !== "admin") {
-            targetProfile.role = "admin";
-            targetProfile.status = "admin";
-            await setDoc(doc(db, "profiles", targetProfile.id), targetProfile);
-          }
-        }
         localStorage.setItem("bincom_active_profile_id", targetProfile.id);
         return targetProfile;
       }
 
-      throw new Error("User profile not found. Please register for a new account.");
+      throw new Error("Incorrect password/email, please try again.");
     }
     throw error;
   }
@@ -3499,8 +3505,6 @@ export const registerUser = async (
     throw new Error("An account with this email already exists. Please log in.");
   }
 
-  const isEmailAdmin = ["stuncharles@gmail.com", "hadekunleabdulwally@gmail.com", "oluwatosinayinde.bincom@gmail.com"].includes(cleanEmail);
-
   try {
     const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, passwordStr);
     const uid = userCredential.user.uid;
@@ -3514,8 +3518,8 @@ export const registerUser = async (
       occupation: "",
       techExperience: "Beginner",
       track: "All",
-      role: isEmailAdmin ? "admin" : "user",
-      status: isEmailAdmin ? "admin" : "onboarding",
+      role: "user",
+      status: "onboarding",
       joinedAt: new Date().toISOString()
     };
 
@@ -3548,8 +3552,8 @@ export const registerUser = async (
         occupation: "",
         techExperience: "Beginner",
         track: "All",
-        role: isEmailAdmin ? "admin" : "user",
-        status: isEmailAdmin ? "admin" : "onboarding",
+        role: "user",
+        status: "onboarding",
         joinedAt: new Date().toISOString()
       };
 
@@ -3840,6 +3844,77 @@ export const deleteKDPresentation = async (id: string): Promise<void> => {
   } catch (err) {
     handleFirestoreError(err, OperationType.DELETE, `kdPresentations/${id}`);
   }
+};
+
+export const reclassifyAllAttendanceRecords = async (lateThresholdMins?: number, veryLateThresholdMins?: number): Promise<number> => {
+  let lateThresh = lateThresholdMins;
+  let veryLateThresh = veryLateThresholdMins;
+
+  if (lateThresh === undefined || veryLateThresh === undefined) {
+    try {
+      const appConfigDoc = await getDoc(doc(db, "metadata", "app_config"));
+      if (appConfigDoc.exists() && appConfigDoc.data()?.attendancePunctualityConfig) {
+        const cfg = appConfigDoc.data().attendancePunctualityConfig;
+        if (typeof cfg.lateThresholdMinutes === "number") lateThresh = cfg.lateThresholdMinutes;
+        if (typeof cfg.veryLateThresholdMinutes === "number") veryLateThresh = cfg.veryLateThresholdMinutes;
+      }
+    } catch (e) {}
+  }
+
+  if (lateThresh === undefined) lateThresh = 2;
+  if (veryLateThresh === undefined) veryLateThresh = 5;
+
+  const attSnap = await getDocs(collection(db, "attendance"));
+  const meetingsSnap = await getDocs(collection(db, "meetings"));
+  const meetingsMap = new Map<string, any>();
+  meetingsSnap.docs.forEach(d => meetingsMap.set(d.id, d.data()));
+
+  let updatedCount = 0;
+  let batch = writeBatch(db);
+  let batchCount = 0;
+
+  for (const attDoc of attSnap.docs) {
+    const data = attDoc.data() as AttendanceRecord;
+    if (!data.timestamp || data.status === "Missed") continue;
+
+    let scheduledTimeStr = data.scheduledStartTime;
+    if (!scheduledTimeStr && data.meetingId) {
+      const m = meetingsMap.get(data.meetingId);
+      if (m) {
+        scheduledTimeStr = m.scheduledStartTime || m.timeString || m.time;
+      }
+    }
+    if (!scheduledTimeStr) continue;
+
+    const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+    const joinMins = getLagosMinutesPastMidnight(new Date(data.timestamp));
+    if (scheduledMins <= 0 || joinMins <= 0) continue;
+
+    const diff = joinMins - scheduledMins;
+    let expectedStatus = "Attended";
+    if (diff > veryLateThresh) {
+      expectedStatus = "Very Late";
+    } else if (diff > lateThresh) {
+      expectedStatus = "Late";
+    }
+
+    if (data.status !== expectedStatus) {
+      batch.update(attDoc.ref, { status: expectedStatus, updatedAt: new Date().toISOString() });
+      updatedCount++;
+      batchCount++;
+      if (batchCount >= 400) {
+        await batch.commit();
+        batch = writeBatch(db);
+        batchCount = 0;
+      }
+    }
+  }
+
+  if (batchCount > 0) {
+    await batch.commit();
+  }
+
+  return updatedCount;
 };
 
 

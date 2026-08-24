@@ -130,7 +130,8 @@ export default function OnboardingForm({
     "Python/Data Science",
     "Mobile App / Frontend Development",
     "C#",
-    "Proservices"
+    "Proservices",
+    "eMigr8 AI"
   ];
 
   const LEVELS_OPTIONS = [
@@ -148,7 +149,6 @@ export default function OnboardingForm({
     "Senior associate level 2",
     "Senior associate level 3",
     "Mentor",
-    "Admin",
     "Trainee Level 1",
     "Trainee Level 2",
     "Trainee Level 3",

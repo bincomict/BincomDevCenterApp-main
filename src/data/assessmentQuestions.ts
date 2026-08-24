@@ -49,10 +49,12 @@ export const TECH_TRACKS = [
   "Data Science & AI",
   "UI/UX Design",
   "Project Management (Tech)",
+  "Proservices",
   "QA Testing & Automation",
   "Cybersecurity",
   "Digital Marketing",
-  "C# Backend Development"
+  "C# Backend Development",
+  "eMigr8 AI"
 ];
 
 export const TRACK_QUESTIONS: Record<string, AssessmentQuestion[]> = {
@@ -461,6 +463,66 @@ export const TRACK_QUESTIONS: Record<string, AssessmentQuestion[]> = {
     }
   ],
 
+  "Proservices": [
+    {
+      id: "pro_1",
+      question: "What is the primary role of the Proservices (Professional Services) / Project Delivery team in a tech organization?",
+      options: [
+        "Coordinating and delivering client tech projects, managing milestones, and facilitating cross-functional team execution to meet delivery goals",
+        "Designing graphical vector logos and visual color palettes in Figma",
+        "Configuring office network hardware cables and routers",
+        "Writing backend SQL database queries for production servers"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "pro_2",
+      question: "In Agile professional service delivery, what is a 'Sprint' or 'Milestone Deliverable'?",
+      options: [
+        "A fixed, timeboxed cycle or target outcome where specific features or project modules are completed and reviewed",
+        "A fast internet connection speed test between remote offices",
+        "A memory limit for client desktop applications",
+        "A server restart command executed on production"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "pro_3",
+      question: "What is the primary responsibility of a Proservices / PMO Coordinator during sprint cycles?",
+      options: [
+        "Tracking progress, removing blockers, running standups, and maintaining clear communication across teams and clients",
+        "Writing pure frontend CSS styling files for webpages",
+        "Replacing physical hard drives on client computers",
+        "Restricting developers from asking questions during meetings"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "pro_4",
+      question: "Two team members have conflicting priorities on a shared project deliverable, threatening the milestone timeline. How should you handle this?",
+      options: [
+        "Facilitate a structured alignment discussion, evaluate project priorities and dependencies with the lead, and agree on a clear path forward",
+        "Tell both team members to handle it privately and avoid facilitating any resolution",
+        "Arbitrarily cancel one person's task without reviewing the impact on client requirements",
+        "Escalate directly to executive leadership without discussing it with the project team first"
+      ],
+      correctAnswerIndex: 0,
+      isSoftSkill: true
+    },
+    {
+      id: "pro_5",
+      question: "The team discovers that a critical client deliverable will be delayed by a few days due to an unexpected blocker. How should the Proservices / PMO lead communicate this?",
+      options: [
+        "Proactively notify stakeholders and client leads, explain the blocker transparently, present a clear recovery plan, and share the updated delivery date",
+        "Keep the delay secret until after the deadline has passed, then blame the developers",
+        "Promise the client everything is on track and pressure developers into unsustainable late shifts",
+        "Blame the client for changing their mind and stop answering their messages"
+      ],
+      correctAnswerIndex: 0,
+      isSoftSkill: true
+    }
+  ],
+
   "QA Testing & Automation": [
     {
       id: "qa_1",
@@ -635,6 +697,65 @@ export const TRACK_QUESTIONS: Record<string, AssessmentQuestion[]> = {
         "Rewrite the entire controller file over the weekend without telling your team or updating unit tests",
         "Delete the controller code files completely to force another team member to write it again",
         "Ignore the controller file and hope you never receive any future maintenance tasks for that section"
+      ],
+      correctAnswerIndex: 0,
+      isSoftSkill: true
+    }
+  ],
+  "eMigr8 AI": [
+    {
+      id: "emigr8_ai_1",
+      question: "What is the core objective of applying Artificial Intelligence and automation within the eMigr8 ecosystem?",
+      options: [
+        "To streamline tech immigration pathways, automate eligibility assessments, and provide intelligent applicant guidance",
+        "To replace human immigration lawyers completely without adhering to compliance rules",
+        "To build cryptocurrency trading bots exclusively for visa applicants",
+        "To scrape personal social media accounts without applicant consent"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "emigr8_ai_2",
+      question: "In prompt engineering and LLM application development, what is Retrieval-Augmented Generation (RAG)?",
+      options: [
+        "A framework that retrieves relevant external domain knowledge to ground model responses with accurate, up-to-date facts",
+        "A method to randomly alter neural network weights during runtime inference",
+        "A graphics rendering algorithm used for user interface animations",
+        "A database backup protocol that deletes duplicate user profiles"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "emigr8_ai_3",
+      question: "When deploying AI-driven applicant evaluation tools, why is model guardrailing and output validation crucial?",
+      options: [
+        "To prevent hallucinations, uphold strict data privacy, and ensure decisions adhere to regulatory policy criteria",
+        "To slow down response times so users think the system is thinking harder",
+        "To hide error messages from developers during production outages",
+        "To ensure the model always outputs 100% positive scores for all candidates"
+      ],
+      correctAnswerIndex: 0
+    },
+    {
+      id: "emigr8_ai_4",
+      question: "An applicant reports that the AI assistant provided conflicting guidance regarding qualification criteria. What is the best immediate response?",
+      options: [
+        "Verify the specific prompt logs, escalate to domain experts to clarify criteria, and refine system prompts/retrieval filters",
+        "Blame the applicant for phrasing their question incorrectly in the chat",
+        "Disable the entire eMigr8 platform for all users for the rest of the week",
+        "Ignore the report because AI models make mistakes periodically anyway"
+      ],
+      correctAnswerIndex: 0,
+      isSoftSkill: true
+    },
+    {
+      id: "emigr8_ai_5",
+      question: "How should an eMigr8 AI product team prioritize ethical considerations when handling sensitive immigrant documentation and biometric data?",
+      options: [
+        "Enforce end-to-end encryption, strict role-based access, anonymization, and transparent user consent standards",
+        "Store sensitive documents in public cloud storage buckets to minimize development overhead",
+        "Share applicant documents with third-party advertising partners to monetize user flows",
+        "Store credentials and access keys in frontend client code"
       ],
       correctAnswerIndex: 0,
       isSoftSkill: true

@@ -2,17 +2,23 @@ export const getCleanTrackName = (track: string): string => {
   if (!track) return "Mobile App / Frontend Development";
   const norm = track.trim().toLowerCase();
   
-  if (norm.includes("pmo emigr8") || norm.includes("pmo-emigr8") || norm.includes("emigr8 pmo")) {
+  if (norm.includes("emigr8 ai") || norm.includes("emigr8-ai") || norm.includes("emigr8ai")) {
+    return "eMigr8 AI";
+  }
+  if (norm.includes("pmo emigr8") || norm.includes("pmo-emigr8") || norm.includes("emigr8 pmo") || norm.includes("emigr8-pmo") || (norm.includes("pmo") && norm.includes("emigr8"))) {
     return "PMO emigr8";
   }
-  if (norm.includes("pmo bincom dev center") || norm.includes("pmo-bincom-dev-center")) {
+  if (norm.includes("pmo bincom dev center") || norm.includes("pmo-bincom-dev-center") || norm.includes("pmo dev center") || norm.includes("pmo bincom")) {
     return "PMO bincom dev center";
   }
   if (norm.includes("bincom global") || norm.includes("bincom ict") || norm.includes("pmo bincom global") || norm.includes("pmo bincom ict") || norm.includes("bincom global/bincom ict")) {
     return "PMO bincom global/bincom ict";
   }
-  if (norm.includes("pmo") || norm.includes("project management")) {
-    return "PMO";
+  if (norm.includes("proservice") || norm.includes("pro-service") || norm.includes("pro services") || norm.includes("professional service") || norm === "proservice") {
+    return "Proservices";
+  }
+  if (norm === "pmo" || norm === "project management" || norm.includes("project management") || norm.includes("pmo")) {
+    return "PMO bincom dev center";
   }
   if (norm.includes("cyber") || norm === "cybersecurity") {
     return "Cybersecurity";
@@ -29,7 +35,7 @@ export const getCleanTrackName = (track: string): string => {
   if (norm.includes("digital marketing") || norm.includes("marketing")) {
     return "Digital Marketing";
   }
-  if (norm.includes("python") || norm.includes("data science") || norm.includes("ai")) {
+  if (norm.includes("python") || norm.includes("data science") || norm.includes("data analyst")) {
     return "Python/Data Science";
   }
   if (norm.includes("frontend") || norm.includes("react") || norm.includes("mobile") || norm.includes("html") || norm.includes("css") || norm.includes("flutter")) {
@@ -38,13 +44,95 @@ export const getCleanTrackName = (track: string): string => {
   if (norm.includes("c#") || norm.includes("c-sharp")) {
     return "C#";
   }
-  if (norm.includes("proservices") || norm.includes("pro services") || norm.includes("qa") || norm.includes("testing") || norm.includes("automation")) {
-    return "Proservices";
+  if (norm.includes("qa") || norm.includes("testing") || norm.includes("automation")) {
+    return "QA Testing & Automation";
   }
   if (norm.includes("emigr8")) {
     return "eMigr8";
   }
   return track;
+};
+
+export const isUserTrackEligibleForMeeting = (
+  userTrack: string | undefined,
+  targetTeamTrackEligibility: any
+): boolean => {
+  if (!userTrack) return false;
+  const cleanUserTrack = getCleanTrackName(userTrack);
+  if (cleanUserTrack.toLowerCase() === "all") return true;
+
+  if (
+    !targetTeamTrackEligibility ||
+    (Array.isArray(targetTeamTrackEligibility) && targetTeamTrackEligibility.length === 0)
+  ) {
+    return true; // No track restrictions means all tracks are eligible
+  }
+
+  const trackList = Array.isArray(targetTeamTrackEligibility)
+    ? targetTeamTrackEligibility
+    : [targetTeamTrackEligibility];
+
+  const isGlobal = trackList.some((t: any) => {
+    if (!t) return false;
+    const s = String(t).trim().toLowerCase();
+    return (
+      s === "all" ||
+      s === "all tracks" ||
+      s === "all tracks eligibility" ||
+      s === "all tracks eligible" ||
+      s === "all team tracks" ||
+      s === ""
+    );
+  });
+  if (isGlobal) return true;
+
+  return trackList.some((t: any) => {
+    if (!t) return false;
+    const cleanTargetTrack = getCleanTrackName(String(t));
+    if (cleanTargetTrack.toLowerCase() === cleanUserTrack.toLowerCase()) {
+      return true;
+    }
+    const rawTarget = String(t).trim().toLowerCase();
+    const rawUser = String(userTrack).trim().toLowerCase();
+    return rawTarget === rawUser;
+  });
+};
+
+export const isUserLevelEligibleForMeeting = (
+  userLevel: string | undefined,
+  userLevels: any
+): boolean => {
+  if (
+    !userLevels ||
+    (Array.isArray(userLevels) && userLevels.length === 0) ||
+    userLevels === "All" ||
+    userLevels === "All User Levels" ||
+    userLevels === "All User Eligible" ||
+    userLevels === "All User Level" ||
+    userLevels === "All Tracks Eligibility" ||
+    userLevels === ""
+  ) {
+    return true;
+  }
+
+  const uLevel = (userLevel || "Apprentice level 1").trim().toLowerCase();
+  const levelsArr = Array.isArray(userLevels) ? userLevels : [userLevels];
+
+  const filtered = levelsArr.filter(
+    (l) =>
+      l &&
+      l !== "All" &&
+      l !== "All User Levels" &&
+      l !== "All User Eligible" &&
+      l !== "All User Level" &&
+      l !== "All Tracks Eligibility"
+  );
+  if (filtered.length === 0) return true;
+
+  return filtered.some((l: string) => {
+    const mLevel = String(l).trim().toLowerCase();
+    return mLevel === uLevel || mLevel.includes(uLevel) || uLevel.includes(mLevel);
+  });
 };
 
 export const getLongTrackName = (track: string): string => {
@@ -76,9 +164,14 @@ export const getLongTrackName = (track: string): string => {
     case "C#":
       return "C# Backend Development";
     case "Proservices":
+      return "Proservices";
+    case "QA Testing & Automation":
+    case "QA":
       return "QA Testing & Automation";
     case "eMigr8":
       return "eMigr8 Pathway";
+    case "eMigr8 AI":
+      return "eMigr8 AI";
     default:
       return clean;
   }
@@ -180,6 +273,14 @@ export const getStandupDetails = (track: string): TrackStandupDetails => {
     case "eMigr8":
       return {
         name: "eMigr8 Team",
+        morningTime: "11:00 AM WAT",
+        eveningTime: "03:00 PM WAT",
+        morningLink: "https://meet.jit.si/BincomDevCenter_eMigr8Team",
+        eveningLink: "https://meet.jit.si/BincomDevCenter_eMigr8Team"
+      };
+    case "eMigr8 AI":
+      return {
+        name: "eMigr8 AI Team",
         morningTime: "11:00 AM WAT",
         eveningTime: "03:00 PM WAT",
         morningLink: "https://meet.jit.si/BincomDevCenter_eMigr8Team",
@@ -388,54 +489,27 @@ export const DEFAULT_KD_COMPULSORY_LEVELS = [
   "Trainee",
   "Global Techie 0",
   "Global Techie 1",
+  "Global Techie 2",
+  "Global Techie 3",
   "Global Techie Level 0",
-  "Global Techie Level 1"
+  "Global Techie Level 1",
+  "Global Techie Level 2",
+  "Global Techie Level 3",
+  "Junior associate level 1",
+  "Junior associate level 2",
+  "Senior associate level 1",
+  "Mentor",
+  "Executive",
+  "Lead",
+  "All Techies"
 ];
 
 export function isKDCompulsoryForLevel(
-  userLevel?: string,
-  compulsoryLevels?: string[]
+  _userLevel?: string,
+  _compulsoryLevels?: string[]
 ): boolean {
-  if (!userLevel) return true; // Default to compulsory if unknown
-  const levelLower = userLevel.toLowerCase().trim();
-
-  // Non-compulsory levels explicitly excluded
-  if (
-    /\bglobal techie\s*(level)?\s*[2-9]\b/i.test(levelLower) ||
-    /\bsenior\b/i.test(levelLower) ||
-    /\blead\b/i.test(levelLower) ||
-    /\bprincipal\b/i.test(levelLower) ||
-    /\bexecutive\b/i.test(levelLower) ||
-    /\bmentor\b/i.test(levelLower) ||
-    /\badmin\b/i.test(levelLower)
-  ) {
-    return false;
-  }
-
-  const activeCompulsoryList = (compulsoryLevels && compulsoryLevels.length > 0)
-    ? compulsoryLevels
-    : DEFAULT_KD_COMPULSORY_LEVELS;
-
-  return activeCompulsoryList.some(comp => {
-    const cLower = comp.toLowerCase().trim();
-    if (!cLower) return false;
-    
-    if (levelLower === cLower) {
-      return true;
-    }
-    
-    // Check key level terms
-    if (levelLower.includes("apprentice")) return true;
-    if (levelLower.includes("intern")) return true;
-    if (levelLower.includes("trainee")) return true;
-    if (levelLower.includes("volunteer")) return true;
-    
-    // Global Techie Level 0 or Level 1
-    if (/\bglobal techie\s*(level)?\s*0\b/i.test(levelLower) || /\blevel 0\b/i.test(levelLower)) return true;
-    if (/\bglobal techie\s*(level)?\s*1\b/i.test(levelLower) || /\blevel 1\b/i.test(levelLower)) return true;
-
-    return false;
-  });
+  // Knowledge Track Meetings are mandatory/compulsory for all users
+  return true;
 }
 
 export function checkIsKDOwner(

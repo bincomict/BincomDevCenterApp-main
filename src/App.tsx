@@ -5,6 +5,8 @@ import { signOut } from "firebase/auth";
 import { listenToAuthChanges, subscribeToAllState, joinMeetingAttendance, dismissReminder, dismissAllReminders, onQuotaStateChanged } from "./firebaseService";
 import { seedDatabase } from "./seed";
 
+import { FEATURE_FLAGS } from "./featureFlags";
+
 // Component imports
 import AuthPage from "./components/AuthPage";
 import OnboardingForm from "./components/OnboardingForm";
@@ -75,7 +77,9 @@ export default function App() {
     onboardingSubmissions: [] as any[]
   });
 
-  const [activeTab, setActiveTab] = useState<"dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "hub" | "microservices" | "projects" | "leaderboard" | "pathway" | "admin" | "mentor_dashboard" | "microservice_dashboard">(
+    FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "hub" : "dashboard"
+  );
   const [activeSubTab, setActiveSubTab] = useState<"kd" | "standups" | "daily-report" | "pd" | "tech" | "drills" | "social">("kd");
   const [adminTab, setAdminTab] = useState<
     | "funnel"
@@ -95,7 +99,7 @@ export default function App() {
     | "microservices_config"
     | "pathways_config"
     | "sync_logs"
-  >("funnel");
+  >(FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "meetings" : "funnel");
   const [hubTab, setHubTab] = useState<"meetings" | "history">("meetings");
   
   // Loading & error cues
@@ -110,6 +114,9 @@ export default function App() {
       if (userProfile) {
         if (userProfile.role === "admin") {
           setActiveTab("admin");
+          if (FEATURE_FLAGS.ENABLE_MEETINGS_ONLY) {
+            setAdminTab("meetings");
+          }
           // Attempt automatic seed if admin is signed in (safe, skips if already seeded)
           seedDatabase().catch(err => {
             const isOffline = err?.message?.toLowerCase().includes("offline") || err?.code === "unavailable";
@@ -120,13 +127,15 @@ export default function App() {
             }
           });
         } else if (
-          userProfile.role === "mentor" ||
-          String(userProfile.learningLevel || "").toLowerCase().includes("mentor") ||
-          String(userProfile.occupation || "").toLowerCase().includes("mentor")
+          !FEATURE_FLAGS.ENABLE_MEETINGS_ONLY && (
+            userProfile.role === "mentor" ||
+            String(userProfile.learningLevel || "").toLowerCase().includes("mentor") ||
+            String(userProfile.occupation || "").toLowerCase().includes("mentor")
+          )
         ) {
           setActiveTab("mentor_dashboard");
         } else {
-          setActiveTab("dashboard");
+          setActiveTab(FEATURE_FLAGS.ENABLE_MEETINGS_ONLY ? "hub" : "dashboard");
         }
       }
       setAuthLoading(false);
@@ -417,12 +426,12 @@ export default function App() {
         )}
 
         {/* Content Container (Independently scrolling) */}
-        <main className="flex-1 overflow-y-auto bg-[#F8FAF8] p-3.5 sm:p-5 md:p-6 flex flex-col" id="central-application-canvas">
+        <main className="flex-1 overflow-y-auto bg-[#F8FAF8] p-5 sm:p-6 flex flex-col" id="central-application-canvas">
           <div className="flex-1">
             <div className={`mx-auto max-w-7xl ${
               activeTab === "dashboard" || activeTab === "mentor_dashboard"
-                ? "space-y-5 sm:space-y-6" 
-                : "bg-white border border-gray-150 rounded-2xl p-4 sm:p-6 shadow-2xs space-y-5 sm:space-y-6"
+                ? "space-y-6" 
+                : "bg-white border border-gray-150 rounded-2xl p-5 sm:p-6 shadow-2xs"
             }`} id="tab-canvas-panel">
               
               {activeTab === "mentor_dashboard" && (

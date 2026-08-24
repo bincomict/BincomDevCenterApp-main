@@ -14,6 +14,7 @@ import {
   isMatchingLogForMeetingAndUser,
 } from "../utils/meetingUtils";
 import {
+  synchronizeMeetings,
   saveMeetingType,
   deleteMeetingType,
   reviewStudent,
@@ -37,6 +38,8 @@ import {
   getLagosMinutesPastMidnight,
   formatMinutesToTimeString,
 } from "../firebaseService";
+import { firebaseConfig } from "../firebase";
+import { purgeDatabase, seedDatabase } from "../seed";
 import { toast } from "./Toast";
 import {
   Users,
@@ -90,7 +93,6 @@ const LEVELS_OPTIONS = [
   "Senior associate level 2",
   "Senior associate level 3",
   "Mentor",
-  "Admin",
   "Trainee Level 1",
   "Trainee Level 2",
   "Trainee Level 3",
@@ -176,6 +178,7 @@ const TEAM_TRACK_OPTIONS = [
   "C#",
   "Digital Marketing",
   "eMigr8 AI Product",
+  "eMigr8 AI",
 ];
 
 const getUserLevelsDisplay = (trackId: any, userLevels?: any): string => {
@@ -388,16 +391,25 @@ const computeRealTimeAttendanceSummary = (
     if (attendedLog) {
       const statusLower = (attendedLog.status || "").toLowerCase();
       let isLate = false;
+      let isVeryLate = false;
 
       if (joinDelta !== null) {
         if (joinDelta > 5) {
+          isVeryLate = true;
+          isLate = true;
+        } else if (joinDelta > 2) {
           isLate = true;
         }
+      } else if (statusLower.includes("very late")) {
+        isVeryLate = true;
+        isLate = true;
       } else if (statusLower.includes("late")) {
         isLate = true;
       }
 
-      if (isLate) {
+      if (isVeryLate) {
+        statusStr = "Attended Very Late";
+      } else if (isLate) {
         statusStr = "Attended Late";
       } else {
         statusStr = "Attended On Time";
@@ -415,12 +427,15 @@ const computeRealTimeAttendanceSummary = (
         } else if (joinDelta === 0) {
           timingBadge = `Exact Start`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • Exact start time`;
-        } else if (joinDelta <= 5) {
+        } else if (joinDelta <= 2) {
           timingBadge = `+${joinDelta}m (On Time)`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m into ${durationMins}m session`;
-        } else {
+        } else if (joinDelta <= 5) {
           timingBadge = `+${joinDelta}m Late`;
           timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m late (${durationMins}m session)`;
+        } else {
+          timingBadge = `+${joinDelta}m Very Late`;
+          timeTrackingSubtext = `Joined at ${joinTimeDisplay} • ${joinDelta}m very late (${durationMins}m session)`;
         }
       } else {
         timeTrackingSubtext = `Joined at ${joinTimeDisplay}`;
@@ -456,7 +471,7 @@ const computeRealTimeAttendanceSummary = (
 
     if (!attendedLog) {
       absentList.push(item);
-    } else if (statusStr === "Attended Late") {
+    } else if (statusStr === "Attended Late" || statusStr === "Attended Very Late") {
       lateList.push(item);
     } else {
       onTimeList.push(item);
@@ -1494,6 +1509,7 @@ export default function AdminPanel({
         : undefined,
     };
 
+    // Directly save/update meeting immediately without prompting for 12:00 AM Midnight Sync
     setLoading(true);
     try {
       await saveMeeting(
@@ -1505,11 +1521,12 @@ export default function AdminPanel({
 
       triggerSuccess(
         editingMeetingId
-          ? "Meeting updated successfully!"
-          : "New meeting scheduled successfully!"
+          ? "Meeting updated & published successfully!"
+          : "New meeting scheduled & published successfully!"
       );
 
-      // Reset states
+      // Reset form states
+      setIsAddingMeeting(false);
       setEditingMeetingId(null);
       setMeetingTitle("");
       setMeetingTime("");
@@ -1533,7 +1550,6 @@ export default function AdminPanel({
       setMeetingDescription("");
       setMeetingAssignedUsers([]);
       setUserSearchText("");
-      setIsAddingMeeting(false);
       setIsRecurring(false);
       setRecurrenceFrequency("one-time");
       setRecurrenceStartDate("");
@@ -1543,7 +1559,7 @@ export default function AdminPanel({
       onStateUpdate();
     } catch (e: any) {
       console.error("Failed to save meeting:", e);
-      triggerError("Failed to save meeting: " + e.message);
+      triggerError("Failed to save meeting: " + (e.message || String(e)));
     } finally {
       setLoading(false);
     }
@@ -1599,9 +1615,76 @@ export default function AdminPanel({
     }
   };
 
+
+
+
+
+
+
   // Execute Save or Delete with selected Sync Option
   const executeSyncAction = async () => {
-    // Keep function placeholder for safety
+    if (!syncModalType || !syncModalData) return;
+    setLoading(true);
+    try {
+      if (syncModalType === "save") {
+        await saveMeeting(
+          syncModalData,
+          adminProfile,
+          selectedSyncOption,
+          state.profiles,
+        );
+
+        triggerSuccess(
+          editingMeetingId
+            ? selectedSyncOption === "immediate"
+              ? "Meeting updated successfully & pushed immediately!"
+              : "Meeting changes saved & queued for 12:00 AM Midnight synchronization!"
+            : selectedSyncOption === "immediate"
+              ? "New meeting scheduled & updated immediately!"
+              : "New meeting scheduled & queued for 12:00 AM Midnight synchronization!"
+        );
+
+        // Reset modal and form states
+        setSyncModalOpen(false);
+        setSyncModalData(null);
+        setEditingMeetingId(null);
+        setMeetingTitle("");
+        setMeetingTime("");
+        setMeetingUrl("");
+        setMeetingType("Knowledge Track");
+        setMeetingTrack([]);
+        setMeetingTeamTracks([]);
+        setMeetingScheduleDays([
+          "Monday",
+          "Tuesday",
+          "Wednesday",
+          "Thursday",
+          "Friday",
+        ]);
+        setMeetingDates([]);
+        setCurrentPickedDate("");
+        setAllowPastDates(false);
+        setMeetingDuration("60 minutes");
+        setMeetingOrganizer("Admin Team");
+        setMeetingStatus("Upcoming");
+        setMeetingDescription("");
+        setMeetingAssignedUsers([]);
+        setUserSearchText("");
+        setIsAddingMeeting(false);
+        setIsRecurring(false);
+        setRecurrenceFrequency("one-time");
+        setRecurrenceStartDate("");
+        setRecurrenceEndDate("");
+        setRecurrenceCustomInterval(1);
+        setRecurrenceEditMode("single");
+        onStateUpdate();
+      }
+    } catch (e: any) {
+      console.error("Failed to execute sync action:", e);
+      triggerError("Failed to execute sync action: " + (e.message || String(e)));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Sync Meetings Trigger & Config
@@ -1614,8 +1697,6 @@ export default function AdminPanel({
 
     setTimeout(async () => {
       try {
-        const { synchronizeMeetings } = await import("../firebaseService");
-
         // Create safety timeout promise
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
@@ -1656,7 +1737,6 @@ export default function AdminPanel({
 
   const handleToggleMidnightSync = async (enabled: boolean) => {
     try {
-      const { updateAppConfigField } = await import("../firebaseService");
       await updateAppConfigField("autoMidnightSyncEnabled", enabled);
       triggerSuccess(
         `Midnight Sync successfully ${enabled ? "enabled" : "disabled"}!`,
@@ -1712,7 +1792,6 @@ export default function AdminPanel({
         setErrorMsg("");
         setSuccessMsg("");
         try {
-          const { purgeDatabase } = await import("../seed");
           await purgeDatabase(adminProfile?.id);
           triggerSuccess(
             "Database successfully purged! All seed data has been deleted and you have a completely fresh workspace.",
@@ -1740,7 +1819,6 @@ export default function AdminPanel({
         setErrorMsg("");
         setSuccessMsg("");
         try {
-          const { seedDatabase } = await import("../seed");
           await seedDatabase(true); // force = true to override
           triggerSuccess(
             "Database successfully configured with default tasks, microservices, and pathways.",
@@ -2027,11 +2105,11 @@ export default function AdminPanel({
   const handleDownloadCSV = () => {
     // Generate simple comma-separated columns
     const headers =
-      "AttendanceRecordID,StudentEmail,StudentName,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n";
+      "AttendanceRecordID,StudentFullName,StudentEmail,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n";
     const rows = state.attendance
       .map(
         (a) =>
-          `"${a.id}","${a.username}@bincom.co","${a.fullName}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"`,
+          `"${a.id}","${a.fullName || a.username}","${a.fullName ? `${a.fullName.toLowerCase().replace(/\s+/g, '.')}@bincom.co` : `${a.username}@bincom.co`}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"`,
       )
       .join("\n");
 
@@ -2178,10 +2256,12 @@ export default function AdminPanel({
             </span>
             Administrative Operations
           </h3>
-          <p className="text-[11px] text-gray-500 mt-0.5">
-            Switch between analytical funnels, student compliance reviews,
-            configuration desks, and logs.
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-[11px] text-gray-500">
+              Switch between analytical funnels, student compliance reviews,
+              configuration desks, and logs.
+            </p>
+          </div>
         </div>
 
         <div className="relative shrink-0" ref={dropdownRef}>
@@ -5988,13 +6068,13 @@ export default function AdminPanel({
                   </button>
                   <button
                     type="submit"
-                    className="px-4 py-1.5 bg-[#4B5E40] hover:bg-[#3d4d34] text-white text-xs font-black rounded-lg cursor-pointer flex items-center gap-1.5"
+                    className="px-4 py-1.5 text-white text-xs font-black rounded-lg cursor-pointer flex items-center gap-1.5 transition shadow-sm bg-[#4B5E40] hover:bg-[#3d4d34]"
                   >
                     <span>⚡</span>
                     <span>
                       {editingMeetingId
-                        ? "Save & Update Immediately"
-                        : "Schedule & Update Immediately"}
+                        ? "Save Meeting Changes"
+                        : "Schedule Meeting"}
                     </span>
                   </button>
                 </div>
@@ -6003,9 +6083,12 @@ export default function AdminPanel({
 
             {/* List of Meetings */}
             <div className="space-y-2.5">
-              <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                Currently Programmed & Scheduled Meetings (Grouped by Series)
-              </h4>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  Currently Programmed & Scheduled Meetings (Grouped by Series)
+                </h4>
+
+              </div>
 
               {(() => {
                 // Group meetings by seriesId
@@ -6190,27 +6273,30 @@ export default function AdminPanel({
                             </div>
                           </div>
 
-                          <div className="flex gap-2 pt-2 border-t border-dashed border-gray-150 justify-between items-center mt-2">
+                          <div className="flex flex-wrap gap-2 pt-2 border-t border-dashed border-gray-150 justify-between items-center mt-2">
                             <span className="text-gray-500 font-bold text-[11px]">
                               Contains {series.occurrences.length} occurrences
                               total
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setExpandedSeriesIds((prev) => ({
-                                  ...prev,
-                                  [series.seriesId]: !prev[series.seriesId],
-                                }));
-                              }}
-                              className="px-3 py-1.5 text-[11px] font-black text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
-                            >
-                              <span>
-                                {isExpanded
-                                  ? "Collapse Series ⬆️"
-                                  : "Expand Series ⬇️"}
-                              </span>
-                            </button>
+                            <div className="flex flex-wrap items-center gap-2">
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setExpandedSeriesIds((prev) => ({
+                                    ...prev,
+                                    [series.seriesId]: !prev[series.seriesId],
+                                  }));
+                                }}
+                                className="px-3 py-1.5 text-[11px] font-black text-white bg-[#4B5E40] hover:bg-[#3d4d34] rounded-lg shadow-2xs transition cursor-pointer flex items-center gap-1"
+                              >
+                                <span>
+                                  {isExpanded
+                                    ? "Collapse Series ⬆️"
+                                    : "Expand Series ⬇️"}
+                                </span>
+                              </button>
+                            </div>
                           </div>
 
                           {/* Render sub-list of occurrences if expanded */}
@@ -6248,7 +6334,9 @@ export default function AdminPanel({
                                               a,
                                               occurrence,
                                               p,
-                                            ),
+                                            ) &&
+                                            !String(a.status || "").toLowerCase().includes("miss") &&
+                                            !String(a.status || "").toLowerCase().includes("absent"),
                                         )),
                                   );
                                   const attendanceLogs = (
@@ -6297,8 +6385,31 @@ export default function AdminPanel({
                                       ? rawRateOcc.toFixed(0)
                                       : rawRateOcc.toFixed(1);
 
-                                  const occStatus =
-                                    occurrence.status || "Upcoming";
+                                  const getOccEffectiveStatus = (occ: any) => {
+                                    const s = String(occ.status || "").trim();
+                                    const sLower = s.toLowerCase();
+                                    if (sLower === "cancelled" || sLower === "archived") return occ.status || "Upcoming";
+                                    if (sLower === "completed") return "Completed";
+
+                                    const now = new Date();
+                                    const todayStr = getLagosDateString(now);
+                                    const currentMins = getLagosMinutesPastMidnight(now);
+
+                                    const occDate = occ.occurrenceDate || (occ.meetingDates && occ.meetingDates[0]) || todayStr;
+                                    const scheduledTimeStr = occ.timeString || occ.time || "09:00 AM";
+                                    const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
+                                    const durationStr = occ.duration || "30 minutes";
+                                    const matchDuration = durationStr.match(/(\d+)/);
+                                    const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
+                                    const endTimeMinutes = scheduledMinutes + durationMinutes;
+
+                                    if (occDate < todayStr || (occDate === todayStr && currentMins >= endTimeMinutes)) {
+                                      return "Completed";
+                                    }
+                                    return occ.status || "Upcoming";
+                                  };
+
+                                  const occStatus = getOccEffectiveStatus(occurrence);
 
                                   return (
                                     <div
@@ -6308,7 +6419,7 @@ export default function AdminPanel({
                                       <div className="space-y-1.5">
                                         <div className="flex items-center gap-2">
                                           <span className="text-[10px] font-extrabold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150">
-                                            �� {occurrence.occurrenceDate}
+                                            📅 {occurrence.occurrenceDate}
                                           </span>
                                           <span className="text-[10px] font-bold text-gray-500">
                                             🕒 {occurrence.timeString}
@@ -6494,6 +6605,7 @@ export default function AdminPanel({
                                         >
                                           ⚡ Update Immediately
                                         </button>
+
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -6546,7 +6658,9 @@ export default function AdminPanel({
                                               a,
                                               currentOcc,
                                               p,
-                                            ),
+                                            ) &&
+                                            !String(a.status || "").toLowerCase().includes("miss") &&
+                                            !String(a.status || "").toLowerCase().includes("absent"),
                                         )),
                                   );
                                   const attendanceLogs = (
@@ -6726,11 +6840,10 @@ export default function AdminPanel({
                                                   </div>
                                                   <div className="min-w-0">
                                                     <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                      {item.fullName}
+                                                      {item.fullName || item.username}
                                                     </div>
                                                     <div className="text-[9px] text-gray-400 truncate">
-                                                      @{item.username} •{" "}
-                                                      {item.track}
+                                                      {item.track} • {item.learningLevel || "Apprentice"}
                                                     </div>
                                                   </div>
                                                 </div>
@@ -6750,6 +6863,11 @@ export default function AdminPanel({
                                                             item.status ===
                                                               "Attended Late"
                                                           ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                          : item.status ===
+                                                              "Very Late" ||
+                                                            item.status ===
+                                                              "Attended Very Late"
+                                                          ? "bg-orange-50 text-orange-700 border-orange-200"
                                                           : "bg-rose-50 text-rose-700 border-rose-200"
                                                     }`}
                                                   >
@@ -6975,6 +7093,7 @@ export default function AdminPanel({
                           >
                             Edit properties ✏️
                           </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -7012,7 +7131,9 @@ export default function AdminPanel({
                                       a,
                                       meeting,
                                       p,
-                                    ),
+                                    ) &&
+                                    !String(a.status || "").toLowerCase().includes("miss") &&
+                                    !String(a.status || "").toLowerCase().includes("absent"),
                                   )),
                             );
                             const attendanceLogs = (
@@ -7066,16 +7187,28 @@ export default function AdminPanel({
 
                                 const statusLower = (attendedLog.status || "").toLowerCase();
                                 let isLate = false;
+                                let isVeryLate = false;
 
                                 if (joinMinutes !== null && scheduledMinutes !== null) {
                                   if (joinMinutes > scheduledMinutes + 5) {
+                                    isVeryLate = true;
+                                    isLate = true;
+                                  } else if (joinMinutes > scheduledMinutes + 2) {
                                     isLate = true;
                                   }
+                                } else if (statusLower.includes("very late")) {
+                                  isVeryLate = true;
+                                  isLate = true;
                                 } else if (statusLower.includes("late")) {
                                   isLate = true;
                                 }
 
-                                if (isLate) {
+                                if (isVeryLate) {
+                                  lateList.push({
+                                    ...baseItem,
+                                    status: "Attended Very Late",
+                                  });
+                                } else if (isLate) {
                                   lateList.push({
                                     ...baseItem,
                                     status: "Attended Late",
@@ -7264,10 +7397,10 @@ export default function AdminPanel({
                                             </div>
                                             <div className="min-w-0">
                                               <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                {item.fullName}
+                                                {item.fullName || item.username}
                                               </div>
                                               <div className="text-[9px] text-gray-400 truncate">
-                                                @{item.username} • {item.track}
+                                                {item.track} • {item.learningLevel || "Apprentice"}
                                               </div>
                                             </div>
                                           </div>
@@ -7284,6 +7417,10 @@ export default function AdminPanel({
                                                       item.status ===
                                                         "Attended Late"
                                                     ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                    : item.status === "Very Late" ||
+                                                      item.status ===
+                                                        "Attended Very Late"
+                                                    ? "bg-orange-50 text-orange-700 border-orange-200"
                                                     : "bg-rose-50 text-rose-700 border-rose-200"
                                               }`}
                                             >
@@ -7429,7 +7566,6 @@ export default function AdminPanel({
                             .filter(
                               (p: any) =>
                                 p.role === "admin" ||
-                                p.learningLevel?.toLowerCase() === "admin" ||
                                 p.learningLevel?.toLowerCase() === "mentor" ||
                                 p.learningLevel?.toLowerCase() ===
                                   "administrative mentor",
@@ -7771,7 +7907,9 @@ export default function AdminPanel({
                                                   a,
                                                   meeting,
                                                   p,
-                                                ),
+                                                ) &&
+                                                !String(a.status || "").toLowerCase().includes("miss") &&
+                                                !String(a.status || "").toLowerCase().includes("absent"),
                                               )),
                                         );
 
@@ -7877,8 +8015,10 @@ export default function AdminPanel({
                                                   a,
                                                   meeting,
                                                   p,
-                                                ),
-                                            )),
+                                                ) &&
+                                                !String(a.status || "").toLowerCase().includes("miss") &&
+                                                !String(a.status || "").toLowerCase().includes("absent"),
+                                              )),
                                       );
                                       const attendanceLogs = (
                                         state.attendance || []
@@ -7936,16 +8076,28 @@ export default function AdminPanel({
 
                                           const statusLower = (attendedLog.status || "").toLowerCase();
                                           let isLate = false;
+                                          let isVeryLate = false;
 
                                           if (joinMinutes !== null && scheduledMinutes !== null) {
                                             if (joinMinutes > scheduledMinutes + 5) {
+                                              isVeryLate = true;
+                                              isLate = true;
+                                            } else if (joinMinutes > scheduledMinutes + 2) {
                                               isLate = true;
                                             }
+                                          } else if (statusLower.includes("very late")) {
+                                            isVeryLate = true;
+                                            isLate = true;
                                           } else if (statusLower.includes("late")) {
                                             isLate = true;
                                           }
 
-                                          if (isLate) {
+                                          if (isVeryLate) {
+                                            lateList.push({
+                                              ...baseItem,
+                                              status: "Attended Very Late",
+                                            });
+                                          } else if (isLate) {
                                             lateList.push({
                                               ...baseItem,
                                               status: "Attended Late",
@@ -8146,11 +8298,10 @@ export default function AdminPanel({
                                                       </div>
                                                       <div className="min-w-0">
                                                         <div className="font-extrabold text-[11px] text-gray-800 truncate">
-                                                          {item.fullName}
+                                                          {item.fullName || item.username}
                                                         </div>
                                                         <div className="text-[9px] text-gray-400 truncate">
-                                                          @{item.username} •{" "}
-                                                          {item.track}
+                                                          {item.track} • {item.learningLevel || "Apprentice"}
                                                         </div>
                                                       </div>
                                                     </div>
@@ -8170,6 +8321,11 @@ export default function AdminPanel({
                                                                 item.status ===
                                                                   "Attended Late"
                                                               ? "bg-amber-50 text-amber-700 border-amber-200"
+                                                              : item.status ===
+                                                                    "Very Late" ||
+                                                                  item.status ===
+                                                                    "Attended Very Late"
+                                                              ? "bg-orange-50 text-orange-700 border-orange-200"
                                                               : "bg-rose-50 text-rose-700 border-rose-200"
                                                         }`}
                                                       >
@@ -9277,11 +9433,11 @@ export default function AdminPanel({
               </span>
               <div>
                 {
-                  "AttendanceRecordID,StudentEmail,StudentName,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n"
+                  "AttendanceRecordID,StudentFullName,StudentEmail,TrackGroup,MeetingName,CheckInTime,PunctualityRating\n"
                 }
                 {state.attendance.map(
                   (a) =>
-                    `"${a.id}","${a.username}@bincom.co","${a.fullName}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"\n`,
+                    `"${a.id}","${a.fullName || a.username}","${a.fullName ? `${a.fullName.toLowerCase().replace(/\s+/g, '.')}@bincom.co` : `${a.username}@bincom.co`}","${a.track}","${a.meetingTitle}","${a.timestamp}","${a.status}"\n`,
                 )}
               </div>
             </div>
@@ -9412,189 +9568,6 @@ export default function AdminPanel({
             </div>
           );
         })()}
-
-      {/* --- UNIFIED SYNCHRONISATION OPTIONS MODAL --- */}
-      {syncModalOpen && (
-        <div
-          className="fixed inset-0 z-55 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in"
-          id="synchronisation-options-modal-overlay"
-        >
-          <div className="bg-white rounded-2xl border border-gray-150 p-6 max-w-md w-full shadow-2xl space-y-5 relative transform scale-100 transition duration-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-150">
-                <RefreshCw className="w-5 h-5 animate-spin-slow" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-gray-900 text-sm sm:text-base leading-none">
-                  Corporate Directory Synchronisation
-                </h3>
-                <p className="text-[10px] text-gray-500 font-semibold mt-1">
-                  Choose how meeting updates should propagate to users
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-3 rounded-xl border border-gray-200 space-y-2">
-              <div className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wide">
-                Change Details:
-              </div>
-              <div className="text-xs font-bold text-gray-800">
-                {syncModalType === "save" ? (
-                  <>
-                    <span className="text-emerald-600 mr-1">[SAVE/UPDATE]</span>
-                    {syncModalData?.title}
-                  </>
-                ) : (
-                  <>
-                    <span className="text-rose-600 mr-1">[DELETE]</span>
-                    Meeting ID: {syncModalDeleteId}
-                  </>
-                )}
-              </div>
-              <div className="text-[11px] text-gray-500 font-medium leading-normal">
-                {syncModalType === "save" ? (
-                  <span>
-                    🕒 {syncModalData?.timeString} |{" "}
-                    {syncModalData?.isRecurring
-                      ? "Recurring Series"
-                      : "One-Time Meeting"}
-                  </span>
-                ) : (
-                  <span>
-                    Mode:{" "}
-                    <strong className="text-slate-700 capitalize">
-                      {syncModalDeleteMode} occurrence(s)
-                    </strong>
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* SYNC TIME OPTIONS */}
-            <div className="space-y-2.5">
-              <div className="text-[10px] font-extrabold text-gray-700 uppercase tracking-wider">
-                Select Synchronisation Schedule:
-              </div>
-              <div className="grid grid-cols-1 gap-2.5">
-                <label
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "immediate" ? "bg-emerald-50/40 border-emerald-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}
-                >
-                  <input
-                    type="radio"
-                    name="sync-schedule-option"
-                    value="immediate"
-                    checked={selectedSyncOption === "immediate"}
-                    onChange={() => setSelectedSyncOption("immediate")}
-                    className="mt-0.5 text-emerald-600 focus:ring-emerald-500 h-4 w-4 cursor-pointer"
-                  />
-                  <div>
-                    <span className="block text-xs font-bold text-gray-900">
-                      Update Users Immediately
-                    </span>
-                    <span className="block text-[10px] text-gray-500 font-semibold mt-0.5 leading-relaxed">
-                      Push updates to all affected users right away. Users will
-                      see the change immediately in their Today's Meetings view.
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start gap-3 p-3.5 rounded-xl border cursor-pointer select-none transition ${selectedSyncOption === "midnight" ? "bg-amber-50/30 border-amber-500/30" : "bg-white border-gray-200 hover:bg-gray-50"}`}
-                >
-                  <input
-                    type="radio"
-                    name="sync-schedule-option"
-                    value="midnight"
-                    checked={selectedSyncOption === "midnight"}
-                    onChange={() => setSelectedSyncOption("midnight")}
-                    className="mt-0.5 text-amber-600 focus:ring-amber-500 h-4 w-4 cursor-pointer"
-                  />
-                  <div>
-                    <span className="block text-xs font-bold text-gray-900">
-                      Update at 12:00 AM (Midnight)
-                    </span>
-                    <span className="block text-[10px] text-gray-500 font-semibold mt-0.5 leading-relaxed">
-                      Queue the update to be applied by the next scheduled
-                      nightly synchronization job at midnight WAT.
-                    </span>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {/* RECURRING SCOPE SELECTION IF APPLICABLE */}
-            {syncModalType === "save" && syncModalData?.seriesId && (
-              <div className="space-y-2 border-t border-gray-150 pt-3">
-                <div className="text-[10px] font-extrabold text-gray-700 uppercase tracking-wider">
-                  Recurring Edit Scope:
-                </div>
-                <div className="space-y-1.5 text-xs font-bold text-gray-700">
-                  <label className="flex items-center gap-2 cursor-pointer py-0.5">
-                    <input
-                      type="radio"
-                      name="recurrence-edit-scope"
-                      value="single"
-                      checked={recurrenceEditOption === "single"}
-                      onChange={() => setRecurrenceEditOption("single")}
-                      className="text-[#4B5E40] focus:ring-[#4B5E40] h-3.5 w-3.5 cursor-pointer"
-                    />
-                    <span>This occurrence only</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer py-0.5">
-                    <input
-                      type="radio"
-                      name="recurrence-edit-scope"
-                      value="future"
-                      checked={recurrenceEditOption === "future"}
-                      onChange={() => setRecurrenceEditOption("future")}
-                      className="text-[#4B5E40] focus:ring-[#4B5E40] h-3.5 w-3.5 cursor-pointer"
-                    />
-                    <span>This and all future occurrences</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer py-0.5">
-                    <input
-                      type="radio"
-                      name="recurrence-edit-scope"
-                      value="all"
-                      checked={recurrenceEditOption === "all"}
-                      onChange={() => setRecurrenceEditOption("all")}
-                      className="text-[#4B5E40] focus:ring-[#4B5E40] h-3.5 w-3.5 cursor-pointer"
-                    />
-                    <span>The entire series</span>
-                  </label>
-                </div>
-              </div>
-            )}
-
-            <div className="flex gap-2.5 justify-end pt-3 border-t border-gray-150">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => setSyncModalOpen(false)}
-                className="px-4 py-2 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-bold rounded-xl border border-gray-250 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                id="execute-sync-action-btn"
-                disabled={loading}
-                onClick={executeSyncAction}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center gap-1.5 justify-center"
-              >
-                {loading ? (
-                  <>
-                    <span className="animate-spin h-3.5 w-3.5 border-2 border-white border-t-transparent rounded-full shrink-0"></span>
-                    <span>Synchronising...</span>
-                  </>
-                ) : (
-                  <span>🚀 Custom Sync Change</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* --- CONFIRM DELETE MEETING TYPE MODAL --- */}
       {meetingTypeToDelete &&

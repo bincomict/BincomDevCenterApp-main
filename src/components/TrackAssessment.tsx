@@ -7,12 +7,8 @@ import {
   XSquare, 
   CheckCircle2, 
   ArrowLeft, 
-  Play, 
-  Pause, 
-  Volume2, 
   HelpCircle, 
   Award,
-  BookOpen,
   ArrowRight
 } from "lucide-react";
 
@@ -65,8 +61,12 @@ export default function TrackAssessment({
     const cleanLower = cleanTrack.toLowerCase();
     const longLower = longTrack.toLowerCase();
 
-    if (cleanLower.includes("pmo") || longLower.includes("project management")) {
+    if (cleanLower.includes("emigr8 ai") || cleanLower.includes("emigr8-ai") || longLower.includes("emigr8 ai")) {
+      resolvedKey = "eMigr8 AI";
+    } else if (cleanLower.includes("pmo") || longLower.includes("project management")) {
       resolvedKey = "Project Management (Tech)";
+    } else if (cleanLower.includes("proservice") || longLower.includes("proservice")) {
+      resolvedKey = "Proservices";
     } else if (cleanLower.includes("frontend") || cleanLower.includes("mobile") || longLower.includes("frontend")) {
       resolvedKey = "Frontend Development (React, Vue, HTML, CSS)";
     } else if (cleanLower.includes("php") || cleanLower.includes("laravel") || longLower.includes("php")) {
@@ -81,7 +81,7 @@ export default function TrackAssessment({
       resolvedKey = "DevOps & Cloud Engineering";
     } else if (cleanLower.includes("design") || cleanLower.includes("ui") || cleanLower.includes("ux") || longLower.includes("design")) {
       resolvedKey = "UI/UX Design";
-    } else if (cleanLower.includes("qa") || cleanLower.includes("testing") || cleanLower.includes("proservices") || longLower.includes("qa")) {
+    } else if (cleanLower.includes("qa") || cleanLower.includes("testing") || longLower.includes("qa")) {
       resolvedKey = "QA Testing & Automation";
     } else if (cleanLower.includes("marketing") || longLower.includes("marketing")) {
       resolvedKey = "Digital Marketing";
@@ -109,43 +109,15 @@ export default function TrackAssessment({
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [isClearingOrientation, setIsClearingOrientation] = useState(false);
 
   useEffect(() => {
     setRandomizedQuestions(shuffleOptions(questions));
   }, [resolvedKey, profile.status, profile.score]);
 
-  // Consent checkbox & interactive video states for Passed Congratulations Orientation section
-  const [orientationConsent, setOrientationConsent] = useState(false);
-  const [videoPlaying, setVideoPlaying] = useState(false);
-  const [videoProgress, setVideoProgress] = useState(20); // starts at 20%
-  const [videoWatched85, setVideoWatched85] = useState(false);
-  const [isClearingOrientation, setIsClearingOrientation] = useState(false);
-
-  // Video timer effect
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" });
   }, [profile.status, profile.score]);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (videoPlaying) {
-      timer = setInterval(() => {
-        setVideoProgress((prev) => {
-          if (prev >= 100) {
-            setVideoPlaying(false);
-            setVideoWatched85(true);
-            return 100;
-          }
-          const next = prev + 5;
-          if (next >= 85) {
-            setVideoWatched85(true);
-          }
-          return next;
-        });
-      }, 400); // increments fast for premium interactive feel
-    }
-    return () => clearInterval(timer);
-  }, [videoPlaying]);
 
   const handleSelectOption = (questionId: string, optionIndex: number) => {
     setAnswers((prev) => ({
@@ -224,7 +196,6 @@ export default function TrackAssessment({
   };
 
   const handleProceedToDashboard = async () => {
-    if (!orientationConsent) return;
     setIsClearingOrientation(true);
 
     try {
@@ -232,7 +203,7 @@ export default function TrackAssessment({
       onAssessmentCompleted(updatedProfile);
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "Failed to confirm orientation compliance.");
+      alert(err.message || "Failed to proceed to dashboard.");
     } finally {
       setIsClearingOrientation(false);
     }
@@ -359,14 +330,14 @@ export default function TrackAssessment({
         </div>
       )}
 
-      {/* 2. RENDER SUCCESS PASS CONGRATS SCREEN (IMAGE 2 SPEC) */}
+      {/* 2. RENDER SUCCESS PASS CONGRATS SCREEN */}
       {hasPassed && (
         <div className="space-y-6" id="pass-view-container">
           
           {/* Congrats banner card */}
-          <div className="bg-white rounded-xl border border-emerald-100 p-8 sm:p-10 shadow-xs text-center space-y-4" id="congrats-status-card">
+          <div className="bg-white rounded-xl border border-emerald-100 p-8 sm:p-10 shadow-xs text-center space-y-5" id="congrats-status-card">
             
-            {/* Green circle checkmark icon matches mockup perfectly */}
+            {/* Green circle checkmark icon */}
             <div className="flex justify-center">
               <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-500 border border-emerald-200 flex items-center justify-center">
                 <span className="text-xl font-bold">✓</span>
@@ -410,99 +381,19 @@ export default function TrackAssessment({
                 You have now been placed in the <strong className="text-gray-700">{cleanTrack}</strong> knowledge track.
               </p>
             </div>
-          </div>
 
-          {/* Orientation media verification block nested directly underneath */}
-          <div className="bg-white rounded-xl border border-gray-100 p-6 sm:p-8 space-y-6 shadow-xs" id="congrats-orientation-card">
-            
-            <div className="border-b border-gray-100 pb-3">
-              <h3 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
-                <BookOpen className="w-4 h-4 text-[#4B5E40]" /> Complete Your Orientation
-              </h3>
-            </div>
-
-            {/* Video Container & Conduct Sandbox */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              
-              {/* Orientation Video */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold text-gray-500 uppercase flex items-center gap-1">
-                  📹 Orientation Video
-                </span>
-                <div className="aspect-video bg-gray-50 rounded-lg border border-gray-200 p-3.5 flex flex-col justify-between relative overflow-hidden" id="orientation-pass-video-box">
-                  
-                  {/* Central branding metadata */}
-                  <div className="my-auto text-center space-y-1 z-10">
-                    <div className="w-9 h-9 rounded-full bg-[#4B5E40]/10 border border-[#4B5E40]/20 flex items-center justify-center mx-auto text-[#4B5E40]">
-                      <Volume2 className="w-4 h-4" />
-                    </div>
-                    <h5 className="text-[10.5px] font-bold text-gray-700">Bincom Ecosystem Briefing</h5>
-                    <p className="text-[9.5px] text-gray-400">Duration: 12 mins. Watched {Math.round(videoProgress)}%</p>
-                  </div>
-
-                  {/* Video actions overlay bar */}
-                  <div className="w-full flex items-center gap-2 pt-2 z-10 border-t border-gray-100 bg-white/80 p-1.5 rounded">
-                    <button
-                      id="pass-video-play-btn"
-                      type="button"
-                      onClick={() => setVideoPlaying(!videoPlaying)}
-                      className="w-5 h-5 rounded-full bg-[#4B5E40] text-white flex items-center justify-center hover:scale-105 transition"
-                    >
-                      {videoPlaying ? <Pause className="w-2.5 h-2.5" /> : <Play className="w-2.5 h-2.5 ml-0.5" />}
-                    </button>
-                    <div className="flex-1">
-                      <div className="h-1 bg-gray-200 rounded-full w-full overflow-hidden">
-                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${videoProgress}%` }}></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Code of Conduct */}
-              <div className="space-y-2">
-                <span className="text-[11px] font-bold text-gray-500 uppercase flex items-center gap-1">
-                  📄 Code of Conduct
-                </span>
-                <div className="h-[120px] bg-gray-50 rounded-lg border border-gray-200 p-3 text-[9px] text-gray-500 overflow-y-auto space-y-2 leading-relaxed" id="orientation-pass-conduct-box">
-                  <p className="font-bold text-gray-700 uppercase tracking-wider text-[9.5px]">Bincom Dev Center Handbook</p>
-                  <p><b>1. Real-time Attendance:</b> Talents must mark daily attendance within the meetings hub before grace durations expire.</p>
-                  <p><b>2. Accountability updates:</b> Standard project sync updates, standups text, and weekly drill items must be honest and verified.</p>
-                  <p><b>3. Code Quality checks:</b> Mentors hold absolute auditing authority regarding compliance validations.</p>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Acknowledgment & Proceed */}
-            <div className="pt-4 border-t border-gray-100 space-y-4">
-              <p className="text-[11px] text-amber-700 font-medium bg-amber-50 rounded p-2 border border-amber-100/50">
-                ⚠️ Please watch at least 85% of the orientation video simulation to mark your onboarding gate as compliant.
-              </p>
-
-              <label className="flex items-start gap-2.5 text-[11.5px] font-medium text-gray-700 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  disabled={!videoWatched85}
-                  checked={orientationConsent}
-                  onChange={(e) => setOrientationConsent(e.target.checked)}
-                  className="w-4 h-4 accent-[#4B5E40] mt-0.5"
-                />
-                <span>
-                  I have watched the orientation video and read the Community Code of Conduct.
-                </span>
-              </label>
-
+            {/* Direct Proceed to Workspace / Dashboard */}
+            <div className="pt-4 border-t border-gray-100 space-y-3">
               <button
                 id="onboard-proceed-dashboard-btn"
                 onClick={handleProceedToDashboard}
-                disabled={!orientationConsent || isClearingOrientation}
-                className="w-full py-2.5 bg-[#4B5E40] hover:bg-[#3d4d34] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded transition uppercase tracking-wider cursor-pointer text-center"
+                disabled={isClearingOrientation}
+                className="w-full py-3 bg-[#4B5E40] hover:bg-[#3d4d34] disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg shadow-sm transition uppercase tracking-wider cursor-pointer text-center"
               >
-                {isClearingOrientation ? "Securing Dashboard Entry..." : "Proceed to Dashboard"}
+                {isClearingOrientation ? "Opening Workspace..." : "Proceed to Dashboard"}
               </button>
 
-              <div className="pt-2 text-center" id="congrats-reopen-onboard-box">
+              <div className="pt-1 text-center" id="congrats-reopen-onboard-box">
                 <button
                   id="reopen-onboarding-btn-pass"
                   type="button"
@@ -513,7 +404,6 @@ export default function TrackAssessment({
                 </button>
               </div>
             </div>
-
           </div>
 
         </div>
