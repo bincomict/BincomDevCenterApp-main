@@ -49,7 +49,6 @@ export const TECH_TRACKS = [
   "Data Science & AI",
   "UI/UX Design",
   "Project Management (Tech)",
-  "Proservices",
   "QA Testing & Automation",
   "Cybersecurity",
   "Digital Marketing",
@@ -456,66 +455,6 @@ export const TRACK_QUESTIONS: Record<string, AssessmentQuestion[]> = {
         "Hide the delay until the official release day, then shift the blame completely onto the development team",
         "Tell stakeholders everything is on track and force developers to work all night to meet the original deadline",
         "Blame the clients for asking too many questions to justify the schedule delay"
-      ],
-      correctAnswerIndex: 0,
-      isSoftSkill: true
-    }
-  ],
-
-  "Proservices": [
-    {
-      id: "pro_1",
-      question: "What is the primary role of the Proservices (Professional Services) / Project Delivery team in a tech organization?",
-      options: [
-        "Coordinating and delivering client tech projects, managing milestones, and facilitating cross-functional team execution to meet delivery goals",
-        "Designing graphical vector logos and visual color palettes in Figma",
-        "Configuring office network hardware cables and routers",
-        "Writing backend SQL database queries for production servers"
-      ],
-      correctAnswerIndex: 0
-    },
-    {
-      id: "pro_2",
-      question: "In Agile professional service delivery, what is a 'Sprint' or 'Milestone Deliverable'?",
-      options: [
-        "A fixed, timeboxed cycle or target outcome where specific features or project modules are completed and reviewed",
-        "A fast internet connection speed test between remote offices",
-        "A memory limit for client desktop applications",
-        "A server restart command executed on production"
-      ],
-      correctAnswerIndex: 0
-    },
-    {
-      id: "pro_3",
-      question: "What is the primary responsibility of a Proservices / PMO Coordinator during sprint cycles?",
-      options: [
-        "Tracking progress, removing blockers, running standups, and maintaining clear communication across teams and clients",
-        "Writing pure frontend CSS styling files for webpages",
-        "Replacing physical hard drives on client computers",
-        "Restricting developers from asking questions during meetings"
-      ],
-      correctAnswerIndex: 0
-    },
-    {
-      id: "pro_4",
-      question: "Two team members have conflicting priorities on a shared project deliverable, threatening the milestone timeline. How should you handle this?",
-      options: [
-        "Facilitate a structured alignment discussion, evaluate project priorities and dependencies with the lead, and agree on a clear path forward",
-        "Tell both team members to handle it privately and avoid facilitating any resolution",
-        "Arbitrarily cancel one person's task without reviewing the impact on client requirements",
-        "Escalate directly to executive leadership without discussing it with the project team first"
-      ],
-      correctAnswerIndex: 0,
-      isSoftSkill: true
-    },
-    {
-      id: "pro_5",
-      question: "The team discovers that a critical client deliverable will be delayed by a few days due to an unexpected blocker. How should the Proservices / PMO lead communicate this?",
-      options: [
-        "Proactively notify stakeholders and client leads, explain the blocker transparently, present a clear recovery plan, and share the updated delivery date",
-        "Keep the delay secret until after the deadline has passed, then blame the developers",
-        "Promise the client everything is on track and pressure developers into unsustainable late shifts",
-        "Blame the client for changing their mind and stop answering their messages"
       ],
       correctAnswerIndex: 0,
       isSoftSkill: true

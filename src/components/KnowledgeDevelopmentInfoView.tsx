@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Profile, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, AttendanceRecord, KDPresentation, defaultKDLeaderboardConfig, KDLeaderboardConfig } from "../types";
 import { updateKnowledgeDevelopmentInfo } from "../firebaseService";
+import { isKDCompulsoryForLevel, DEFAULT_KD_COMPULSORY_LEVELS } from "../utils/trackUtils";
 import { 
   BookOpen, 
   Calendar, 
@@ -64,6 +65,7 @@ export default function KnowledgeDevelopmentInfoView({
   const isAdmin = profile.role === "admin" || profile.status === "admin";
 
   const userLevel = profile.learningLevel || profile.techExperience || "Apprentice level 1";
+  const isCompulsory = isKDCompulsoryForLevel(userLevel, currentInfo.compulsoryLevels);
 
   const [isEditing, setIsEditing] = useState(false);
   const [kdSubTab, setKdSubTab] = useState<"schedule" | "report" | "leaderboard" | "feedback" | "info">("schedule");
@@ -84,6 +86,7 @@ export default function KnowledgeDevelopmentInfoView({
     learningProgress: currentInfo.learningProgress || defaultKnowledgeDevelopmentInfo.learningProgress,
     meetingLink: currentInfo.meetingLink || defaultKnowledgeDevelopmentInfo.meetingLink,
     targetSessionsPerMonth: currentInfo.targetSessionsPerMonth || 16,
+    compulsoryLevels: currentInfo.compulsoryLevels || DEFAULT_KD_COMPULSORY_LEVELS,
     lastUpdatedBy: currentInfo.lastUpdatedBy,
     lastUpdatedAt: currentInfo.lastUpdatedAt
   });
@@ -102,6 +105,7 @@ export default function KnowledgeDevelopmentInfoView({
       learningProgress: currentInfo.learningProgress || defaultKnowledgeDevelopmentInfo.learningProgress,
       meetingLink: currentInfo.meetingLink || defaultKnowledgeDevelopmentInfo.meetingLink,
       targetSessionsPerMonth: currentInfo.targetSessionsPerMonth || 16,
+      compulsoryLevels: currentInfo.compulsoryLevels || DEFAULT_KD_COMPULSORY_LEVELS,
       lastUpdatedBy: currentInfo.lastUpdatedBy,
       lastUpdatedAt: currentInfo.lastUpdatedAt
     });
@@ -395,6 +399,63 @@ export default function KnowledgeDevelopmentInfoView({
               />
             </div>
 
+            <div className="md:col-span-2 border-t border-gray-100 pt-3">
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1">
+                Compulsory Attendance Techie Levels
+              </label>
+              <p className="text-[11px] text-gray-500 mb-2">
+                Select which Techie Levels require compulsory KD attendance. Techies in these levels will see a clear compulsory notice.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 p-3 rounded-xl border border-gray-200 max-h-48 overflow-y-auto">
+                {[
+                  "Apprentice level 1",
+                  "Apprentice level 2",
+                  "Apprentice level 3",
+                  "Apprentice",
+                  "Intern",
+                  "Volunteer beginner level",
+                  "Volunteer intermediate level",
+                  "Volunteer advanced level",
+                  "Trainee Level 1",
+                  "Trainee Level 2",
+                  "Trainee Level 3",
+                  "Trainee",
+                  "Global Techie 0",
+                  "Global Techie 1",
+                  "Global Techie 2",
+                  "Global Techie 3",
+                  "Junior associate level 1",
+                  "Junior associate level 2",
+                  "Senior associate level 1",
+                  "Mentor"
+                ].map((levelOption) => {
+                  const activeLevels = formData.compulsoryLevels || DEFAULT_KD_COMPULSORY_LEVELS;
+                  const isChecked = activeLevels.some(l => l.toLowerCase() === levelOption.toLowerCase());
+                  return (
+                    <label key={levelOption} className="flex items-center gap-2 text-xs font-medium text-gray-800 cursor-pointer select-none py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          let updated = [...activeLevels];
+                          if (checked) {
+                            if (!updated.some(l => l.toLowerCase() === levelOption.toLowerCase())) {
+                              updated.push(levelOption);
+                            }
+                          } else {
+                            updated = updated.filter(l => l.toLowerCase() !== levelOption.toLowerCase());
+                          }
+                          setFormData({ ...formData, compulsoryLevels: updated });
+                        }}
+                        className="w-3.5 h-3.5 accent-[#4B5E40] rounded"
+                      />
+                      {levelOption}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-3 border-t border-gray-100 pt-4">
@@ -420,11 +481,15 @@ export default function KnowledgeDevelopmentInfoView({
       {/* USER ATTENDANCE EXPECTATION BANNER */}
       <div 
         id="kd-user-attendance-expectation-card"
-        className="p-5 rounded-2xl border bg-emerald-50/80 border-emerald-200 text-emerald-950 shadow-xs space-y-3 animate-fade-in"
+        className={`p-5 rounded-2xl border ${
+          isCompulsory 
+            ? "bg-rose-50/80 border-rose-200 text-rose-950" 
+            : "bg-emerald-50/80 border-emerald-200 text-emerald-950"
+        } shadow-xs space-y-3 animate-fade-in`}
       >
         <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 border-current/15">
           <div className="flex items-center gap-2.5">
-            <UserCheck className="w-5 h-5 text-[#4B5E40]" />
+            <UserCheck className={`w-5 h-5 ${isCompulsory ? "text-rose-600" : "text-emerald-600"}`} />
             <div>
               <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">Your Techie Level</span>
               <h4 className="font-extrabold text-sm flex items-center gap-2">
@@ -433,13 +498,33 @@ export default function KnowledgeDevelopmentInfoView({
             </div>
           </div>
 
-          <span className="px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs bg-[#4B5E40] text-white">
-            <Clock className="w-3.5 h-3.5" /> Tue – Fri • 9:00 AM WAT
+          <span className={`px-3.5 py-1.5 rounded-full text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-2xs ${
+            isCompulsory 
+              ? "bg-rose-600 text-white" 
+              : "bg-[#4B5E40] text-white"
+          }`}>
+            {isCompulsory ? (
+              <>
+                <AlertCircle className="w-3.5 h-3.5" /> Compulsory KD Attendance
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-3.5 h-3.5" /> Optional / Recommended Attendance
+              </>
+            )}
           </span>
         </div>
 
         <p className="text-xs leading-relaxed font-medium">
-          Knowledge Development (KD) sessions hold Tuesday through Friday at 9:00 AM (WAT). Attendance is automatically tracked through the Meeting module and contributes directly to your Knowledge Development KPIs and monthly progression.
+          {isCompulsory ? (
+            <>
+              Attendance at Knowledge Development (KD) sessions is <strong className="underline decoration-rose-400">COMPULSORY</strong> for your Techie Level (<strong>{userLevel}</strong>). Mandatory levels include Apprentices, Interns, Trainees, Global Techies Level 0 and Level 1. Sessions run Tuesday to Friday at 9:00 AM (WAT). Attendance is automatically tracked through the Meeting module and directly impacts your Knowledge Development KPIs and monthly progression.
+            </>
+          ) : (
+            <>
+              Attendance at Knowledge Development (KD) sessions is <strong>OPTIONAL</strong> for your Techie Level (<strong>{userLevel}</strong>). Although optional for your level, you are highly encouraged to attend sessions, facilitate presentations, share technical expertise, or mentor junior techies.
+            </>
+          )}
         </p>
       </div>
 

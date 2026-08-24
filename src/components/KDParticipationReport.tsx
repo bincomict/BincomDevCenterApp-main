@@ -6,7 +6,7 @@ import {
   AttendanceRecord, 
   KnowledgeDevelopmentInfo 
 } from "../types";
-import { getLagosDateString, isAuthorizedForKDTopic } from "../utils/trackUtils";
+import { isKDCompulsoryForLevel, getLagosDateString, isAuthorizedForKDTopic } from "../utils/trackUtils";
 import { sendReminder } from "../firebaseService";
 import { toast } from "./Toast";
 import { 
@@ -216,6 +216,7 @@ export default function KDParticipationReport({
   const presenterComplianceData = useMemo(() => {
     const list = eligibleProfiles.map(p => {
       const userPresList = presenterMap[p.id] || [];
+      const isCompulsory = isKDCompulsoryForLevel(p.learningLevel, kdInfo?.compulsoryLevels);
 
       // Check for Completed presentation
       const completedPres = userPresList.find(pres => pres.status === "Completed");
@@ -255,6 +256,7 @@ export default function KDParticipationReport({
 
       return {
         profile: p,
+        isCompulsory,
         userPresList,
         primaryPres,
         topic: (() => {
@@ -350,9 +352,11 @@ export default function KDParticipationReport({
       const allUserPres = presentations.filter(pres => pres.presenterUserId === p.id || (pres.presenterName && pres.presenterName.toLowerCase() === p.fullName.toLowerCase()));
       const completedAll = allUserPres.filter(pres => pres.status === "Completed").sort((a, b) => b.date.localeCompare(a.date));
       const lastPresDate = completedAll[0]?.date || "Never Presented";
+      const isCompulsory = isKDCompulsoryForLevel(p.learningLevel, kdInfo?.compulsoryLevels);
 
       return {
         profile: p,
+        isCompulsory,
         lastPresDate
       };
     });
@@ -562,9 +566,9 @@ export default function KDParticipationReport({
       `Overall Attendance Rate: ${attendanceStats.overallAttendanceRate}%`,
       "",
       "--- SECTION 1: MONTHLY PRESENTER COMPLIANCE MONITOR ---",
-      "Student ID,Full Name,Username,Track/Team,Techie Level,Assigned Topic,Scheduled Date,Presentation Status",
+      "Student ID,Full Name,Username,Track/Team,Techie Level,Assigned Topic,Scheduled Date,Presentation Status,Compulsory Status",
       ...presenterComplianceData.allPresenters.map(item =>
-        `"${item.profile.id}","${item.profile.fullName}","${item.profile.username}","${item.profile.track}","${item.profile.learningLevel || 'Apprentice level 1'}","${item.topic}","${item.presentationDate}","${item.status}"`
+        `"${item.profile.id}","${item.profile.fullName}","${item.profile.username}","${item.profile.track}","${item.profile.learningLevel || 'Apprentice level 1'}","${item.topic}","${item.presentationDate}","${item.status}","${item.isCompulsory ? 'Mandatory for Level' : 'Optional'}"`
       ),
       "",
       "--- SECTION 2: TECHIE LEVELS WITH LOWEST ATTENDANCE ---",
@@ -643,6 +647,7 @@ export default function KDParticipationReport({
         topic: p.topic,
         scheduledDate: p.presentationDate,
         presentationStatus: p.status,
+        isCompulsory: p.isCompulsory,
         rating: p.rating
       })),
       attendanceAnalytics: {
@@ -1149,6 +1154,7 @@ export default function KDParticipationReport({
                   <th className="py-3 px-4">Assigned Topic</th>
                   <th className="py-3 px-4 text-center">Scheduled Date</th>
                   <th className="py-3 px-4 text-center">Presentation Status</th>
+                  <th className="py-3 px-4 text-center">Compulsory Requirement</th>
                   <th className="py-3 px-4 text-center print:hidden">Action</th>
                 </tr>
               </thead>
@@ -1189,6 +1195,15 @@ export default function KDParticipationReport({
                           {item.status === "Missed" && <AlertTriangle className="w-3 h-3 text-rose-600" />}
                           {item.status === "Not Scheduled" && <Clock className="w-3 h-3 text-amber-600" />}
                           {item.status === "Completed" ? "Completed" : item.status === "Upcoming" ? "Upcoming" : item.status === "Missed" ? "Missed Assigned" : "Not Scheduled"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                          item.isCompulsory
+                            ? "bg-rose-50 text-rose-800 border-rose-200"
+                            : "bg-gray-50 text-gray-600 border-gray-200"
+                        }`}>
+                          {item.isCompulsory ? "Mandatory for Level" : "Optional"}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-center print:hidden">
@@ -1442,8 +1457,8 @@ export default function KDParticipationReport({
                 {frequentlyAbsentAttendees.map((item) => (
                   <tr key={item.profile.id} className="hover:bg-rose-50/20 transition">
                     <td className="py-3.5 px-4 font-bold text-gray-900">
-                      <div>{item.profile.fullName || item.profile.username}</div>
-                      <span className="text-[10px] text-gray-400 font-medium">{item.profile.learningLevel || "Apprentice level 1"}</span>
+                      <div>{item.profile.fullName}</div>
+                      <span className="text-[10px] text-gray-400 font-mono">@{item.profile.username}</span>
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 font-semibold max-w-xs truncate">
                       {item.profile.track}
@@ -1517,6 +1532,7 @@ export default function KDParticipationReport({
                   <th className="py-3 px-4">Student Name</th>
                   <th className="py-3 px-4">Track / Team</th>
                   <th className="py-3 px-4">Techie Level</th>
+                  <th className="py-3 px-4 text-center">Compulsory Status</th>
                   <th className="py-3 px-4 text-center">Last Historical Presentation</th>
                   <th className="py-3 px-4 text-center print:hidden">Action</th>
                 </tr>
@@ -1525,8 +1541,8 @@ export default function KDParticipationReport({
                 {techiesWhoDidNotPresent.map((item) => (
                   <tr key={item.profile.id} className="hover:bg-amber-50/20 transition">
                     <td className="py-3.5 px-4 font-bold text-gray-900">
-                      <div>{item.profile.fullName || item.profile.username}</div>
-                      <span className="text-[10px] text-gray-400 font-medium">{item.profile.track}</span>
+                      <div>{item.profile.fullName}</div>
+                      <span className="text-[10px] text-gray-400 font-mono">@{item.profile.username}</span>
                     </td>
                     <td className="py-3.5 px-4 text-gray-600 font-semibold max-w-xs truncate">
                       {item.profile.track}
@@ -1534,6 +1550,15 @@ export default function KDParticipationReport({
                     <td className="py-3.5 px-4">
                       <span className="px-2 py-0.5 bg-gray-100 text-gray-700 border border-gray-200 rounded text-[10px] font-bold">
                         {item.profile.learningLevel || "Apprentice level 1"}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border ${
+                        item.isCompulsory 
+                          ? "bg-rose-50 text-rose-800 border-rose-200" 
+                          : "bg-gray-100 text-gray-600 border-gray-200"
+                      }`}>
+                        {item.isCompulsory ? "Mandatory for Level" : "Optional"}
                       </span>
                     </td>
                     <td className="py-3.5 px-4 text-center font-mono text-gray-500 font-semibold">
@@ -1677,8 +1702,8 @@ export default function KDParticipationReport({
               {attendanceStats.userAttendanceLedger.map((item) => (
                 <tr key={item.profile.id} className="hover:bg-gray-50/50 transition">
                   <td className="py-3 px-4 font-bold text-gray-900">
-                    <div>{item.profile.fullName || item.profile.username}</div>
-                    <span className="text-[10px] text-gray-400 font-medium">{item.profile.learningLevel || "Apprentice level 1"}</span>
+                    <div>{item.profile.fullName}</div>
+                    <span className="text-[10px] text-gray-400 font-mono">@{item.profile.username}</span>
                   </td>
                   <td className="py-3 px-4 text-gray-600 font-semibold max-w-xs truncate">
                     {item.profile.track}

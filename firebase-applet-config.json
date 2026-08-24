@@ -1,12 +1,12 @@
 {
-  "projectId": "bincomcenterapp",
-  "appId": "1:546715541353:web:e34332c1862fcebb9327f8",
-  "apiKey": "AIzaSyBbu3GIGwCD1T1do42nzi9qXt25vM2Blgs",
-  "authDomain": "bincomcenterapp.firebaseapp.com",
+  "projectId": "bincom-dev-center-app-dev",
+  "appId": "1:1021237943935:web:b264cbaabe59167598294a",
+  "apiKey": "AIzaSyC7ZuPoJaZ5ik3q3fIF_Iwj7CYW_H0qW_I",
+  "authDomain": "bincom-dev-center-app-dev.firebaseapp.com",
   "firestoreDatabaseId": "(default)",
-  "storageBucket":"bincomcenterapp.firebasestorage.app",
-  "messagingSenderId": "546715541353",
-  "measurementId": "G-FVRYTPPG1C",
+  "storageBucket": "bincom-dev-center-app-dev.firebasestorage.app",
+  "messagingSenderId": "1021237943935",
+  "measurementId": "G-T6P4ZEV2MH",
   "oAuthClientId": "677385168361-hvem3msgtdih1dh7rv7abi3or4s9o39o.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

@@ -148,6 +148,7 @@ export default function OnboardingForm({
     "Senior associate level 2",
     "Senior associate level 3",
     "Mentor",
+    "Admin",
     "Trainee Level 1",
     "Trainee Level 2",
     "Trainee Level 3",

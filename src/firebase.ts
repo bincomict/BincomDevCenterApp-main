@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore, getDoc, doc, getFirestore } from "firebase/firestore";
+import { getAnalytics, isSupported } from "firebase/analytics";
 import firebaseAppletConfig from "../firebase-applet-config.json";
 
 // Explicit static references so Vite's static define/replacement works perfectly
@@ -37,24 +38,32 @@ export const firebaseConfig = {
 // If there is an explicit named database in firebase-applet-config.json or the environment, we use it.
 // We must NEVER pass the string "default" (without parentheses) to initializeFirestore, as this will fail.
 // We sanitize any variation of "default" or "(default)" to undefined (which triggers default DB).
-function sanitizeDatabaseId(id: any, projectId: string): string | undefined {
+function sanitizeDatabaseId(id: any): string | undefined {
   if (!id) return undefined;
   const trimmed = String(id).trim().toLowerCase();
   if (trimmed === "default" || trimmed === "(default)" || trimmed === "") {
-    return undefined;
-  }
-  // If the target project is a custom user project (e.g. bincomcenterapp), ignore old auto-generated AI Studio database IDs
-  if (projectId && !projectId.startsWith("ai-studio-") && trimmed.startsWith("ai-studio-")) {
     return undefined;
   }
   return String(id).trim();
 }
 
 const rawDbId = viteDatabaseId || nodeDatabaseId || firebaseAppletConfig.firestoreDatabaseId;
-const dbId = sanitizeDatabaseId(rawDbId, firebaseConfig.projectId);
+const dbId = sanitizeDatabaseId(rawDbId);
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
+
+// Safe Analytics Initialization
+export let analytics: ReturnType<typeof getAnalytics> | null = null;
+if (typeof window !== "undefined") {
+  isSupported().then((supported) => {
+    if (supported && firebaseConfig.measurementId) {
+      analytics = getAnalytics(app);
+    }
+  }).catch(() => {
+    // Analytics not supported in this environment
+  });
+}
 
 // Safe Initialization to avoid HMR multiple-initialization crashes.
 function getSafeFirestoreInstance(databaseId: string | undefined) {

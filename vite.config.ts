@@ -54,26 +54,5 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_FIREBASE_APP_ID': JSON.stringify(getFirebaseVar('appId', 'VITE_FIREBASE_APP_ID')),
       'import.meta.env.VITE_FIREBASE_MEASUREMENT_ID': JSON.stringify(getFirebaseVar('measurementId', 'VITE_FIREBASE_MEASUREMENT_ID')),
     },
-    build: {
-      chunkSizeWarningLimit: 2000,
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('firebase')) {
-                return 'vendor-firebase';
-              }
-              if (id.includes('react') || id.includes('motion')) {
-                return 'vendor-react';
-              }
-              if (id.includes('lucide-react')) {
-                return 'vendor-icons';
-              }
-              return 'vendor';
-            }
-          },
-        },
-      },
-    },
   };
 });

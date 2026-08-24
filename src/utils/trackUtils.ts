@@ -38,11 +38,8 @@ export const getCleanTrackName = (track: string): string => {
   if (norm.includes("c#") || norm.includes("c-sharp")) {
     return "C#";
   }
-  if (norm.includes("proservice") || norm.includes("pro services") || norm === "proservice") {
+  if (norm.includes("proservices") || norm.includes("pro services") || norm.includes("qa") || norm.includes("testing") || norm.includes("automation")) {
     return "Proservices";
-  }
-  if (norm.includes("qa") || norm.includes("testing") || norm.includes("automation")) {
-    return "QA Testing & Automation";
   }
   if (norm.includes("emigr8")) {
     return "eMigr8";
@@ -79,9 +76,6 @@ export const getLongTrackName = (track: string): string => {
     case "C#":
       return "C# Backend Development";
     case "Proservices":
-      return "Proservices";
-    case "QA Testing & Automation":
-    case "QA":
       return "QA Testing & Automation";
     case "eMigr8":
       return "eMigr8 Pathway";
@@ -394,27 +388,54 @@ export const DEFAULT_KD_COMPULSORY_LEVELS = [
   "Trainee",
   "Global Techie 0",
   "Global Techie 1",
-  "Global Techie 2",
-  "Global Techie 3",
   "Global Techie Level 0",
-  "Global Techie Level 1",
-  "Global Techie Level 2",
-  "Global Techie Level 3",
-  "Junior associate level 1",
-  "Junior associate level 2",
-  "Senior associate level 1",
-  "Mentor",
-  "Executive",
-  "Lead",
-  "All Techies"
+  "Global Techie Level 1"
 ];
 
 export function isKDCompulsoryForLevel(
-  _userLevel?: string,
-  _compulsoryLevels?: string[]
+  userLevel?: string,
+  compulsoryLevels?: string[]
 ): boolean {
-  // Knowledge Track Meetings are mandatory/compulsory for all users
-  return true;
+  if (!userLevel) return true; // Default to compulsory if unknown
+  const levelLower = userLevel.toLowerCase().trim();
+
+  // Non-compulsory levels explicitly excluded
+  if (
+    /\bglobal techie\s*(level)?\s*[2-9]\b/i.test(levelLower) ||
+    /\bsenior\b/i.test(levelLower) ||
+    /\blead\b/i.test(levelLower) ||
+    /\bprincipal\b/i.test(levelLower) ||
+    /\bexecutive\b/i.test(levelLower) ||
+    /\bmentor\b/i.test(levelLower) ||
+    /\badmin\b/i.test(levelLower)
+  ) {
+    return false;
+  }
+
+  const activeCompulsoryList = (compulsoryLevels && compulsoryLevels.length > 0)
+    ? compulsoryLevels
+    : DEFAULT_KD_COMPULSORY_LEVELS;
+
+  return activeCompulsoryList.some(comp => {
+    const cLower = comp.toLowerCase().trim();
+    if (!cLower) return false;
+    
+    if (levelLower === cLower) {
+      return true;
+    }
+    
+    // Check key level terms
+    if (levelLower.includes("apprentice")) return true;
+    if (levelLower.includes("intern")) return true;
+    if (levelLower.includes("trainee")) return true;
+    if (levelLower.includes("volunteer")) return true;
+    
+    // Global Techie Level 0 or Level 1
+    if (/\bglobal techie\s*(level)?\s*0\b/i.test(levelLower) || /\blevel 0\b/i.test(levelLower)) return true;
+    if (/\bglobal techie\s*(level)?\s*1\b/i.test(levelLower) || /\blevel 1\b/i.test(levelLower)) return true;
+
+    return false;
+  });
 }
 
 export function checkIsKDOwner(
