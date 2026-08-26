@@ -434,43 +434,37 @@ export const shouldShowMeetingOnDashboard = (
     return false;
   }
 
+  // Check if meeting is archived or cancelled
+  const sLower = String(meeting.status || "").trim().toLowerCase();
+  if (sLower === "archived" || sLower === "cancelled") {
+    return false;
+  }
+
   // If showAllScheduled is true (e.g. for the general meetings hub), we don't enforce current day/time filters
   if (showAllScheduled) {
-    if (meeting.status && (meeting.status.trim().toLowerCase() === "archived" || meeting.status.trim().toLowerCase() === "completed")) {
-      return false;
-    }
     return true;
   }
 
-  // Only meetings that have been activated by the midnight cron job are shown
-  if (meeting.isActive !== true) {
-    return false;
-  }
-
-  // Check if meeting is active/archived (completed meetings remain visible on their scheduled date)
-  if (meeting.status && meeting.status.trim().toLowerCase() === "archived") {
-    return false;
-  }
-
   // Check if meeting is scheduled for today (WAT timezone)
-  if (meeting.meetingDates && Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
-    const todayStr = getLagosDateString(new Date());
-    const isToday = meeting.meetingDates.includes(todayStr);
-    if (!isToday) {
-      return false;
-    }
+  const todayStr = getLagosDateString(new Date());
+  let isToday = false;
+  if (meeting.occurrenceDate && meeting.occurrenceDate === todayStr) {
+    isToday = true;
+  } else if (meeting.meetingDates && Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
+    isToday = meeting.meetingDates.includes(todayStr);
   } else {
     const days = meeting.scheduleDays && meeting.scheduleDays.length > 0 
       ? meeting.scheduleDays 
       : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
       
-    const isToday = days.some((day: string) => day.trim().toLowerCase() === lagosToday.toLowerCase());
-    if (!isToday) {
-      return false;
-    }
+    isToday = days.some((day: string) => day.trim().toLowerCase() === lagosToday.toLowerCase());
   }
 
-  // Meetings remain visible throughout their scheduled date until 11:59 PM
+  if (!isToday) {
+    return false;
+  }
+
+  // Completed and active meetings for today remain visible on the user's dashboard throughout that day until midnight
   return true;
 };
 

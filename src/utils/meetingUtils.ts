@@ -49,7 +49,7 @@ export const normalizeDateStr = (d: any): string => {
 /**
  * Robust matching between an attendance log and a meeting/occurrence object.
  */
-export const isMatchingLogForMeeting = (log: any, targetMeeting: any): boolean => {
+export const isMatchingLogForMeeting = (log: any, targetMeeting: any, targetDateParam?: string): boolean => {
   if (!log || !targetMeeting) return false;
 
   const lMeetingId = String(log.meetingId || "").toLowerCase().trim();
@@ -67,8 +67,13 @@ export const isMatchingLogForMeeting = (log: any, targetMeeting: any): boolean =
   ).toLowerCase().trim();
   const mTitle = String(targetMeeting.title || targetMeeting.meetingTitle || "").toLowerCase().trim();
 
-  // If both log and targetMeeting specify a date, ensure they match!
-  const targetDateRaw = targetMeeting.occurrenceDate || targetMeeting.date || targetMeeting.meetingDate || (targetMeeting.meetingDates ? targetMeeting.meetingDates[0] : "");
+  // If both log and targetMeeting specify a date (or targetDateParam), ensure they match!
+  const targetDateRaw =
+    targetDateParam ||
+    targetMeeting.occurrenceDate ||
+    targetMeeting.date ||
+    targetMeeting.meetingDate ||
+    (Array.isArray(targetMeeting.meetingDates) && targetMeeting.meetingDates.length === 1 ? targetMeeting.meetingDates[0] : "");
   const logDateRaw = log.meetingDate || log.date || (log.timestamp ? String(log.timestamp).substring(0, 10) : "");
 
   const targetDate = normalizeDateStr(targetDateRaw);
@@ -108,9 +113,9 @@ export const isMatchingLogForMeeting = (log: any, targetMeeting: any): boolean =
 /**
  * Robust matching between an attendance log, a meeting/occurrence object, and a user profile.
  */
-export const isMatchingLogForMeetingAndUser = (log: any, targetMeeting: any, profile: any): boolean => {
+export const isMatchingLogForMeetingAndUser = (log: any, targetMeeting: any, profile: any, targetDateParam?: string): boolean => {
   if (!log || !profile) return false;
-  if (!isMatchingLogForMeeting(log, targetMeeting)) return false;
+  if (!isMatchingLogForMeeting(log, targetMeeting, targetDateParam)) return false;
 
   const lUserId = String(log.userId || "").toLowerCase().trim();
   const lUsername = String(log.username || "").toLowerCase().trim();
@@ -131,3 +136,29 @@ export const isMatchingLogForMeetingAndUser = (log: any, targetMeeting: any, pro
 
   return false;
 };
+
+/**
+ * Robust check if an attendance record belongs to the given user profile.
+ */
+export const isMatchingUser = (log: any, profile: any): boolean => {
+  if (!log || !profile) return false;
+  const lUserId = String(log.userId || "").toLowerCase().trim();
+  const lUsername = String(log.username || "").toLowerCase().trim();
+  const lEmail = String(log.userEmail || log.email || "").toLowerCase().trim();
+  const lFullName = String(log.fullName || "").toLowerCase().trim();
+
+  const pProfId = String(profile.id || "").toLowerCase().trim();
+  const pUsername = String(profile.username || "").toLowerCase().trim();
+  const pEmail = String(profile.email || "").toLowerCase().trim();
+  const pUid = String(profile.uid || "").toLowerCase().trim();
+  const pFullName = String(profile.fullName || "").toLowerCase().trim();
+
+  if (lUserId && (lUserId === pProfId || lUserId === pUid || lUserId === pUsername)) return true;
+  if (pProfId && (pProfId === lUserId || pProfId === lUsername)) return true;
+  if (lUsername && pUsername && lUsername === pUsername) return true;
+  if (lEmail && pEmail && lEmail === pEmail) return true;
+  if (lFullName && pFullName && lFullName === pFullName) return true;
+
+  return false;
+};
+

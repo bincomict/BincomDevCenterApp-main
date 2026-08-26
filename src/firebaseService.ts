@@ -27,7 +27,7 @@ import {
 } from "firebase/auth";
 import { db, auth } from "./firebase";
 import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation, AttendancePunctualityConfig, defaultAttendancePunctualityConfig } from "./types";
-import { isMatchingLogForMeetingAndUser, isMatchingLogForMeeting } from "./utils/meetingUtils";
+import { isMatchingLogForMeetingAndUser, isMatchingLogForMeeting, normalizeDateStr, getBaseMeetingId } from "./utils/meetingUtils";
 import { isUserTrackEligibleForMeeting, isUserLevelEligibleForMeeting, getCleanTrackName } from "./utils/trackUtils";
 
 export enum OperationType {
@@ -367,8 +367,49 @@ export const autoArchiveCompletedMeetings = async (
   const existingHistIds = new Set(meetingHistory.map(h => h.id));
   const existingAttIds = new Set(attendance.map(a => a.id));
 
-  const meetingsToProcess: Array<{ meeting: any; targetStatus: string; shouldUpdateStatus: boolean; needsHistory: boolean }> = [];
+  const batches: any[] = [];
+  let currentBatch = writeBatch(db);
+  let batchCount = 0;
+  const writeBatchSize = 400;
 
+  const pushToBatch = (op: () => void) => {
+    op();
+    batchCount++;
+    if (batchCount >= writeBatchSize) {
+      batches.push(currentBatch);
+      currentBatch = writeBatch(db);
+      batchCount = 0;
+    }
+  };
+
+  // 1. Initial cleanup sweep: delete any premature 'att_missed_' records for future dates or for today's meetings that haven't ended yet
+  for (const a of attendance) {
+    const s = String(a.status || "").toLowerCase();
+    const isMissedType = s.includes("miss") || s.includes("absent") || String(a.id || "").startsWith("att_missed_");
+    if (isMissedType && a.id) {
+      const aDate = normalizeDateStr(a.meetingDate || a.date || (a.timestamp ? String(a.timestamp).substring(0, 10) : ""));
+      if (aDate && aDate > todayStr) {
+        // Future date - cannot be missed yet!
+        pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
+      } else if (aDate && aDate === todayStr) {
+        const matchedMeeting = meetings.find(m => isMatchingLogForMeeting(a, m));
+        if (matchedMeeting) {
+          const scheduledTimeStr = matchedMeeting.timeString || matchedMeeting.time || matchedMeeting.scheduledStartTime || matchedMeeting.startTime || "09:00 AM";
+          const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+          const durationStr = matchedMeeting.duration || "30 minutes";
+          const matchDuration = durationStr.match(/(\d+)/);
+          const durationMins = matchDuration ? parseInt(matchDuration[1], 10) : 30;
+          const endMins = scheduledMins + durationMins;
+          if (currentMinutes < endMins) {
+            // Meeting hasn't ended yet today - premature missed record!
+            pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Process each meeting
   for (const m of meetings) {
     const statusLower = String(m.status || "").trim().toLowerCase();
 
@@ -397,7 +438,6 @@ export const autoArchiveCompletedMeetings = async (
     const endTimeMinutes = scheduledMinutes + durationMinutes;
 
     let isMeetingEnded = false;
-
     if (latestDate < todayStr) {
       isMeetingEnded = true;
     } else if (latestDate === todayStr) {
@@ -411,53 +451,35 @@ export const autoArchiveCompletedMeetings = async (
       targetStatus = m.status;
     } else if (isMeetingEnded) {
       targetStatus = "Completed";
+    } else if (latestDate === todayStr && currentMinutes >= scheduledMinutes && currentMinutes < endTimeMinutes) {
+      targetStatus = "Live";
+    } else {
+      targetStatus = "Upcoming";
     }
 
     const shouldUpdateStatus = statusLower !== targetStatus.toLowerCase();
-
-    if (
-      shouldUpdateStatus ||
-      (needsHistory &&
-        (targetStatus.toLowerCase() === "completed" ||
-          targetStatus.toLowerCase() === "archived"))
-    ) {
-      meetingsToProcess.push({ meeting: m, targetStatus, shouldUpdateStatus, needsHistory });
-    }
-  }
-
-  if (meetingsToProcess.length === 0) return;
-
-  console.log(`Processing ${meetingsToProcess.length} meetings for auto-completion / auto-archiving (5 min post-completion)...`);
-
-  const batches: any[] = [];
-  let currentBatch = writeBatch(db);
-  let batchCount = 0;
-  const writeBatchSize = 400;
-
-  meetingsToProcess.forEach(({ meeting: m, targetStatus, shouldUpdateStatus, needsHistory }) => {
     if (shouldUpdateStatus) {
-      const docRef = doc(db, "meetings", m.id);
-      currentBatch.update(docRef, { status: targetStatus, updatedAt: new Date().toISOString() });
-      batchCount++;
-      if (batchCount >= writeBatchSize) {
-        batches.push(currentBatch);
-        currentBatch = writeBatch(db);
-        batchCount = 0;
-      }
+      pushToBatch(() => {
+        const docRef = doc(db, "meetings", m.id);
+        currentBatch.update(docRef, { status: targetStatus, updatedAt: new Date().toISOString() });
+      });
     }
 
-    const occurrenceDate = m.occurrenceDate || (m.meetingDates && m.meetingDates[0]) || todayStr;
-    const historyId = `m-hist-${m.id}-${occurrenceDate}`;
+    // IF NOT ENDED: clean up any premature missed records for this meeting
+    if (!isMeetingEnded && targetStatus.toLowerCase() !== "completed" && targetStatus.toLowerCase() !== "archived") {
+      const prematureMissed = attendance.filter(a => isMatchingLogForMeeting(a, m, occurrenceDate));
+      prematureMissed.forEach(a => {
+        const s = (a.status || "").toLowerCase();
+        if ((s.includes("miss") || s.includes("absent") || String(a.id || "").startsWith("att_missed_")) && a.id) {
+          pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
+        }
+      });
+      continue;
+    }
 
-    if (needsHistory) {
-      const scheduledTimeStr = m.timeString || m.time || m.scheduledStartTime || m.startTime || "09:00 AM";
-      const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
-      const durationStr = m.duration || "30 minutes";
-      const matchDuration = durationStr.match(/(\d+)/);
-      const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
-      const endTimeMinutes = scheduledMinutes + durationMinutes;
+    // IF ENDED: Record history and create missed attendance only for concluded meetings
+    if (needsHistory && (targetStatus.toLowerCase() === "completed" || targetStatus.toLowerCase() === "archived")) {
       const scheduledEndTimeStr = formatMinutesToMeetingTime(endTimeMinutes);
-
       const historyData: MeetingHistoryRecord = {
         id: historyId,
         meetingId: m.id,
@@ -472,13 +494,9 @@ export const autoArchiveCompletedMeetings = async (
         targetTeamTrackEligibility: m.targetTeamTrackEligibility || []
       };
 
-      currentBatch.set(doc(db, "meetingHistory", historyId), historyData, { merge: true });
-      batchCount++;
-      if (batchCount >= writeBatchSize) {
-        batches.push(currentBatch);
-        currentBatch = writeBatch(db);
-        batchCount = 0;
-      }
+      pushToBatch(() => {
+        currentBatch.set(doc(db, "meetingHistory", historyId), historyData, { merge: true });
+      });
     }
 
     const eligibleUsers = profiles.filter(u => isUserEligibleForMeetingInBackend(u, m, assignments));
@@ -487,24 +505,18 @@ export const autoArchiveCompletedMeetings = async (
     // Clean up any stale auto-generated missed records for users who are NOT eligible for this meeting
     profiles.forEach(user => {
       if (!eligibleUserIds.has(user.id)) {
-        const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user));
+        const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user, occurrenceDate));
         userAttLogs.forEach(a => {
           const s = (a.status || "").toLowerCase();
           if ((s.includes("miss") || s.includes("absent") || (a.id && a.id.startsWith("att_missed_"))) && a.id) {
-            currentBatch.delete(doc(db, "attendance", a.id));
-            batchCount++;
-            if (batchCount >= writeBatchSize) {
-              batches.push(currentBatch);
-              currentBatch = writeBatch(db);
-              batchCount = 0;
-            }
+            pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
           }
         });
       }
     });
     
     eligibleUsers.forEach(user => {
-      const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user));
+      const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user, occurrenceDate));
       const hasRealAttendance = userAttLogs.some(a => {
         const s = (a.status || "").toLowerCase();
         return !s.includes("miss") && !s.includes("absent");
@@ -519,17 +531,11 @@ export const autoArchiveCompletedMeetings = async (
           const s = (a.status || "").toLowerCase();
           if (s.includes("miss") || s.includes("absent")) {
             if (a.id) {
-              currentBatch.delete(doc(db, "attendance", a.id));
-              batchCount++;
-              if (batchCount >= writeBatchSize) {
-                batches.push(currentBatch);
-                currentBatch = writeBatch(db);
-                batchCount = 0;
-              }
+              pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
             }
           } else if (a.timestamp && a.id) {
-            const scheduledTimeStr = a.scheduledStartTime || m.scheduledStartTime || m.timeString || m.time || "09:00 AM";
-            const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+            const timeStr = a.scheduledStartTime || m.scheduledStartTime || m.timeString || m.time || "09:00 AM";
+            const scheduledMins = parseMeetingTimeToMinutes(timeStr);
             const joinMins = getLagosMinutesPastMidnight(new Date(a.timestamp));
             if (scheduledMins > 0 && joinMins > 0) {
               const diff = joinMins - scheduledMins;
@@ -541,13 +547,9 @@ export const autoArchiveCompletedMeetings = async (
               }
 
               if (a.status !== expectedStatus) {
-                currentBatch.update(doc(db, "attendance", a.id), { status: expectedStatus, updatedAt: new Date().toISOString() });
-                batchCount++;
-                if (batchCount >= writeBatchSize) {
-                  batches.push(currentBatch);
-                  currentBatch = writeBatch(db);
-                  batchCount = 0;
-                }
+                pushToBatch(() => {
+                  currentBatch.update(doc(db, "attendance", a.id), { status: expectedStatus, updatedAt: new Date().toISOString() });
+                });
               }
             }
           }
@@ -569,17 +571,13 @@ export const autoArchiveCompletedMeetings = async (
             meetingDate: occurrenceDate,
             date: occurrenceDate
           };
-          currentBatch.set(doc(db, "attendance", missedRecordId), missedRecord, { merge: true });
-          batchCount++;
-          if (batchCount >= writeBatchSize) {
-            batches.push(currentBatch);
-            currentBatch = writeBatch(db);
-            batchCount = 0;
-          }
+          pushToBatch(() => {
+            currentBatch.set(doc(db, "attendance", missedRecordId), missedRecord, { merge: true });
+          });
         }
       }
     });
-  });
+  }
 
   if (batchCount > 0) {
     batches.push(currentBatch);
@@ -3120,39 +3118,89 @@ export const updateAttendance = async (recordId: string, status: string): Promis
 export const joinMeetingAttendance = async (userId: string, meetingId: string): Promise<string> => {
   // First fetch the meeting
   let meeting: Meeting | null = null;
+  const cleanId = getBaseMeetingId(meetingId);
   const meetingDoc = await getDoc(doc(db, "meetings", meetingId));
   
   if (meetingDoc.exists()) {
     meeting = meetingDoc.data() as Meeting;
-  } else {
-    // Check if it's a project team sync meeting in the "projects" collection
-    const projectsSnap = await getDocs(collection(db, "projects"));
-    for (const pDoc of projectsSnap.docs) {
-      const pData = pDoc.data();
-      if (pData.meetings && Array.isArray(pData.meetings)) {
-        const found = pData.meetings.find((m: any) => m.id === meetingId);
-        if (found) {
-          meeting = {
-            id: found.id,
-            title: found.title,
-            type: "project",
-            timeString: found.time || "02:00 PM",
-            trackId: pData.trackId || "All",
-            jitsiUrl: found.jitsiUrl || found.link || "",
-            projectId: pDoc.id,
-            scheduleDays: found.scheduleDays || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
-            duration: found.duration || "45 minutes",
-            organizer: found.organizer || "Project Manager",
-            status: found.status || "Upcoming",
-            description: found.description || found.title
-          } as Meeting;
-          break;
-        }
-      }
+  } else if (cleanId && cleanId !== meetingId) {
+    const cleanDoc = await getDoc(doc(db, "meetings", cleanId));
+    if (cleanDoc.exists()) {
+      meeting = cleanDoc.data() as Meeting;
     }
   }
 
-  if (!meeting) throw new Error("Meeting not found");
+  if (!meeting) {
+    // Check if it's a project team sync meeting in the "projects" collection
+    try {
+      const projectsSnap = await getDocs(collection(db, "projects"));
+      for (const pDoc of projectsSnap.docs) {
+        const pData = pDoc.data();
+        if (pData.meetings && Array.isArray(pData.meetings)) {
+          const found = pData.meetings.find((m: any) => m.id === meetingId || (cleanId && m.id === cleanId));
+          if (found) {
+            meeting = {
+              id: found.id,
+              title: found.title,
+              type: "project",
+              timeString: found.time || "02:00 PM",
+              trackId: pData.trackId || "All",
+              jitsiUrl: found.jitsiUrl || found.link || "",
+              projectId: pDoc.id,
+              scheduleDays: found.scheduleDays || ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+              duration: found.duration || "45 minutes",
+              organizer: found.organizer || "Project Manager",
+              status: found.status || "Upcoming",
+              description: found.description || found.title
+            } as Meeting;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Could not query projects collection:", e);
+    }
+  }
+
+  if (!meeting) {
+    // Check meetingHistory collection
+    try {
+      const histDoc = await getDoc(doc(db, "meetingHistory", meetingId));
+      if (histDoc.exists()) {
+        const hData = histDoc.data() as any;
+        meeting = {
+          id: hData.meetingId || meetingId,
+          title: hData.title || "Stand-up Alignment Meeting",
+          type: hData.type || "Knowledge Track",
+          timeString: hData.scheduledStartTime || "09:00 AM",
+          duration: hData.duration || "30 minutes",
+          jitsiUrl: hData.jitsiUrl || "",
+          trackId: hData.userLevels || "All",
+          organizer: hData.organizer || "Admin Team",
+          status: "Completed",
+          description: hData.title
+        } as Meeting;
+      }
+    } catch (e) {
+      console.warn("Could not query meetingHistory collection:", e);
+    }
+  }
+
+  if (!meeting) {
+    // Graceful fallback meeting object so attendance check-in is never blocked
+    meeting = {
+      id: meetingId,
+      title: "Daily Sync Meeting",
+      type: "Knowledge Track",
+      timeString: "09:00 AM",
+      duration: "30 minutes",
+      jitsiUrl: "",
+      trackId: "All",
+      organizer: "Admin Team",
+      status: "Upcoming",
+      description: "Scheduled daily sync session"
+    } as Meeting;
+  }
 
   const profileDoc = await getDoc(doc(db, "profiles", userId));
   if (!profileDoc.exists()) throw new Error("User profile not found");
@@ -3185,20 +3233,20 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   }
 
   let status: "Attended" | "Late" | "Very Late" | "Missed" | string = "Attended";
-  if (currentMinutes > scheduledMinutes + veryLateThreshold) {
+  if (scheduledMinutes > 0 && currentMinutes > scheduledMinutes + veryLateThreshold) {
     status = "Very Late";
-  } else if (currentMinutes > scheduledMinutes + lateThreshold) {
+  } else if (scheduledMinutes > 0 && currentMinutes > scheduledMinutes + lateThreshold) {
     status = "Late";
   }
 
   const scheduledEndTimeStr = formatMinutesToMeetingTime(endTimeMinutes);
 
   const record: AttendanceRecord = {
-    id: `att_${meetingId}_${userId}_${todayStr}`,
+    id: `att_${cleanId || meetingId}_${userId}_${todayStr}`,
     userId,
     username: profile.username,
     fullName: profile.fullName,
-    meetingId,
+    meetingId: cleanId || meetingId,
     meetingTitle: meeting.title,
     meetingType: meeting.type,
     timestamp: now.toISOString(),
@@ -3218,19 +3266,26 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
   await setDoc(doc(db, "attendance", record.id), record);
 
   // Clean up any stale auto-generated 'Missed' records for this user & meeting on this date
-  const missedRecordId = `att_missed_${meetingId}_${userId}_${todayStr}`;
-  await deleteDoc(doc(db, "attendance", missedRecordId)).catch(() => {});
+  const missedRecordId1 = `att_missed_${meetingId}_${userId}_${todayStr}`;
+  const missedRecordId2 = `att_missed_${cleanId || meetingId}_${userId}_${todayStr}`;
+  await deleteDoc(doc(db, "attendance", missedRecordId1)).catch(() => {});
+  if (missedRecordId2 !== missedRecordId1) {
+    await deleteDoc(doc(db, "attendance", missedRecordId2)).catch(() => {});
+  }
   try {
     const missedQuery = query(
       collection(db, "attendance"),
       where("userId", "==", userId),
-      where("meetingId", "==", meetingId),
-      where("status", "==", "Missed")
+      where("status", "in", ["Missed", "Absent", "missed", "absent"])
     );
     const missedSnap = await getDocs(missedQuery);
     for (const d of missedSnap.docs) {
-      if (d.id !== record.id) {
-        await deleteDoc(doc(db, "attendance", d.id)).catch(() => {});
+      const dData = d.data();
+      const dDate = normalizeDateStr(dData.meetingDate || dData.date || (dData.timestamp ? String(dData.timestamp).substring(0, 10) : ""));
+      if (dDate === todayStr && (isMatchingLogForMeeting(dData, meeting, todayStr) || d.id === missedRecordId1 || d.id === missedRecordId2)) {
+        if (d.id !== record.id) {
+          await deleteDoc(doc(db, "attendance", d.id)).catch(() => {});
+        }
       }
     }
   } catch (err) {
@@ -3243,7 +3298,7 @@ export const joinMeetingAttendance = async (userId: string, meetingId: string): 
       id: `audit_${Date.now()}`,
       userId,
       username: profile.username,
-      meetingId,
+      meetingId: cleanId || meetingId,
       action: "Admin Joined Session",
       timestamp: now.toISOString()
     };

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Meeting, AttendanceRecord, Profile } from "../types";
 import { Video, Clock, CheckCircle, Play, Users, Landmark, Key, Shield, XCircle, History, ChevronDown, AlertTriangle, BookOpen, Info, Plus, Calendar } from "lucide-react";
 import { getStandupDetails, getCleanTrackName, shouldShowMeetingOnDashboard, getLagosDateString, formatMeetingDates, formatExactJoinTime, checkIsKDOwner } from "../utils/trackUtils";
-import { isMatchingLogForMeetingAndUser } from "../utils/meetingUtils";
+import { isMatchingLogForMeetingAndUser, isMatchingUser, normalizeDateStr } from "../utils/meetingUtils";
 import { isUserEligibleForMeetingInBackend } from "../firebaseService";
 import AttendanceHistoryTab from "./AttendanceHistoryTab";
 import KnowledgeDevelopmentInfoView from "./KnowledgeDevelopmentInfoView";
@@ -171,9 +171,9 @@ export default function MeetingsHub({
   };
 
   const isMeetingMissedOrPastCutoff = (m: any) => {
-    const record = getAttendanceForMeeting(m.id);
-    if (record) {
-      return record.status === "Missed";
+    const record = getAttendanceForMeeting(m);
+    if (record && (record.status === "Attended" || record.status === "Late" || record.status === "Very Late" || (!String(record.status || "").toLowerCase().includes("miss") && !String(record.status || "").toLowerCase().includes("absent")))) {
+      return false;
     }
     const timeStr = m.timeString || m.time || "09:00 AM";
     const startTimeMinutes = parseFlexibleTimeToMinutes(timeStr);
@@ -331,13 +331,17 @@ export default function MeetingsHub({
 
   const standupDetails = getStandupDetails(profile.track);
 
+  const lagosTodayStr = getLagosDateString(currentTime);
+
   const getAttendanceForMeeting = (meetingOrId: any) => {
-    const target = typeof meetingOrId === "object" ? meetingOrId : { id: meetingOrId };
+    const target = typeof meetingOrId === "object" && meetingOrId !== null
+      ? meetingOrId
+      : { id: meetingOrId, meetingId: meetingOrId };
     const matches = (attendance || []).filter((a) =>
-      isMatchingLogForMeetingAndUser(a, target, profile)
+      isMatchingLogForMeetingAndUser(a, target, profile, lagosTodayStr)
     );
     if (matches.length === 0) return undefined;
-    const attendedOrLate = matches.find((a) => a.status === "Attended" || a.status === "Late" || a.status === "Very Late");
+    const attendedOrLate = matches.find((a) => a.status === "Attended" || a.status === "Late" || a.status === "Very Late" || (!String(a.status || "").toLowerCase().includes("miss") && !String(a.status || "").toLowerCase().includes("absent")));
     return attendedOrLate || matches[0];
   };
 
@@ -587,39 +591,105 @@ export default function MeetingsHub({
     };
   }).filter(proj => proj.meetings.length > 0); 
 
-  const todayMeetingsForStats = eligibleMeetings.filter(isMeetingToday);
+  // 1. Collect all meetings scheduled for today that the user is eligible for
+  const allEligibleMeetingsToday = (meetings || []).filter((m) => {
+    const isToday = isMeetingToday(m);
+    if (!isToday) return false;
+    if (profile.role === "admin") return true;
+    return isUserEligibleForMeetingInBackend(profile, m, meetingAssignments || []);
+  });
+
+  // 2. Also collect project meetings scheduled for today from user's active projects
+  const projectMeetingsToday: any[] = [];
+  (userProjects || []).forEach((proj) => {
+    (proj.meetings || []).forEach((pm: any) => {
+      if (isMeetingToday(pm)) {
+        projectMeetingsToday.push(pm);
+      }
+    });
+  });
+
+  const combinedMeetingsToday = [...allEligibleMeetingsToday, ...projectMeetingsToday];
 
   let dynamicOnTimeCount = 0;
   let dynamicLateCount = 0;
   let dynamicMissedCount = 0;
 
   const lateThresh = state?.attendancePunctualityConfig?.lateThresholdMinutes ?? 2;
+  const countedAttendanceIds = new Set<string>();
 
-  todayMeetingsForStats.forEach((m) => {
-    const record = attendance.find(a => a.userId === profile.id && a.meetingId === m.id);
-    const startTimeMinutes = parseFlexibleTimeToMinutes(m.timeString);
+  // A. Check each meeting scheduled for today
+  combinedMeetingsToday.forEach((m) => {
+    const record = getAttendanceForMeeting(m);
+    const timeStr = m.timeString || m.time || m.scheduledStartTime || m.startTime || "09:00 AM";
+    const startTimeMinutes = parseFlexibleTimeToMinutes(timeStr);
     const durationMinutes = parseDurationInMinutes(m.duration);
     const endTimeMinutes = startTimeMinutes + durationMinutes;
-    const currentLagosMinutes = getMinutesInLagos(currentTime);
 
     if (record) {
-      if (record.status === "Missed") {
+      if (record.id) countedAttendanceIds.add(record.id);
+      const s = String(record.status || "").trim().toLowerCase();
+      if (s === "missed" || s === "absent") {
         dynamicMissedCount++;
-      } else {
+      } else if (s.includes("very late") || s.includes("late")) {
+        dynamicLateCount++;
+      } else if (record.timestamp) {
         const checkInMinutes = getMinutesInLagos(new Date(record.timestamp));
-        if (checkInMinutes <= startTimeMinutes + lateThresh) {
-          dynamicOnTimeCount++;
-        } else {
+        if (startTimeMinutes > 0 && checkInMinutes > startTimeMinutes + lateThresh) {
           dynamicLateCount++;
+        } else {
+          dynamicOnTimeCount++;
         }
+      } else {
+        dynamicOnTimeCount++;
       }
     } else {
-      const cutoffMinutes = endTimeMinutes - 2;
-      if (currentLagosMinutes >= cutoffMinutes) {
+      // If the meeting has ended in Lagos time and user hasn't checked in, it is Missed
+      if (lagosCurrentMinutes >= endTimeMinutes) {
         dynamicMissedCount++;
       }
     }
   });
+
+  // B. Also include any extra user attendance logs recorded for today that were not already counted
+  (attendance || []).forEach((a) => {
+    if (!a || (a.id && countedAttendanceIds.has(a.id))) return;
+    if (!isMatchingUser(a, profile)) return;
+
+    const aDate = normalizeDateStr(a.meetingDate || a.date || (a.timestamp ? String(a.timestamp).substring(0, 10) : ""));
+    if (aDate === lagosTodayStr) {
+      if (a.id) countedAttendanceIds.add(a.id);
+      const s = String(a.status || "").trim().toLowerCase();
+      if (s === "missed" || s === "absent") {
+        dynamicMissedCount++;
+      } else if (s.includes("very late") || s.includes("late")) {
+        dynamicLateCount++;
+      } else {
+        dynamicOnTimeCount++;
+      }
+    }
+  });
+
+  // C. Calculate User's Overall / All-Time Sync Attendance Summary
+  const userAllTimeAttendance = (attendance || []).filter((a) => isMatchingUser(a, profile));
+  let allTimeOnTimeCount = 0;
+  let allTimeLateCount = 0;
+  let allTimeMissedCount = 0;
+
+  userAllTimeAttendance.forEach((a) => {
+    const s = String(a.status || "").trim().toLowerCase();
+    if (s.includes("miss") || s.includes("absent")) {
+      allTimeMissedCount++;
+    } else if (s.includes("late")) {
+      allTimeLateCount++;
+    } else {
+      allTimeOnTimeCount++;
+    }
+  });
+
+  const totalAllTimeSyncs = allTimeOnTimeCount + allTimeLateCount + allTimeMissedCount;
+  const overallPunctualityRate = totalAllTimeSyncs > 0 ? Math.round((allTimeOnTimeCount / totalAllTimeSyncs) * 100) : 100;
+
 
   return (
     <div className="space-y-6 animate-fade-in" id="meetings-hub-root">
@@ -855,7 +925,8 @@ export default function MeetingsHub({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {knowledgeTrackMeetings.map((p) => {
-              const index = getAttendanceForMeeting(p.id);
+              const rawRecord = getAttendanceForMeeting(p);
+              const hasRealCheckIn = rawRecord && !String(rawRecord.status || "").toLowerCase().includes("miss") && !String(rawRecord.status || "").toLowerCase().includes("absent");
 
               const timeStr = p.timeString || p.time || "09:00 AM";
               const startTimeMinutes = parseFlexibleTimeToMinutes(timeStr);
@@ -880,6 +951,8 @@ export default function MeetingsHub({
                 statusLabel = "Completed";
                 statusColor = "bg-gray-100 text-gray-700 border-gray-250";
               }
+
+              const index = meetingTimeStatus === "Completed" ? rawRecord : (hasRealCheckIn ? rawRecord : undefined);
 
               return (
                 <div 
@@ -1024,7 +1097,8 @@ export default function MeetingsHub({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {microserviceMeetings.map((p) => {
-              const index = getAttendanceForMeeting(p.id);
+              const rawRecord = getAttendanceForMeeting(p);
+              const hasRealCheckIn = rawRecord && !String(rawRecord.status || "").toLowerCase().includes("miss") && !String(rawRecord.status || "").toLowerCase().includes("absent");
 
               const timeStr = p.timeString || p.time || "09:00 AM";
               const startTimeMinutes = parseFlexibleTimeToMinutes(timeStr);
@@ -1049,6 +1123,8 @@ export default function MeetingsHub({
                 statusLabel = "Completed";
                 statusColor = "bg-gray-100 text-gray-700 border-gray-250";
               }
+
+              const index = meetingTimeStatus === "Completed" ? rawRecord : (hasRealCheckIn ? rawRecord : undefined);
 
               return (
                 <div 
@@ -1197,7 +1273,8 @@ export default function MeetingsHub({
                 <p className="text-[10.5px] font-mono uppercase font-black text-indigo-700">{proj.name}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {proj.meetings.map((meet) => {
-                    const index = getAttendanceForMeeting(meet.id);
+                    const rawRecord = getAttendanceForMeeting(meet);
+                    const hasRealCheckIn = rawRecord && !String(rawRecord.status || "").toLowerCase().includes("miss") && !String(rawRecord.status || "").toLowerCase().includes("absent");
 
                     const timeStr = meet.timeString || meet.time || "09:00 AM";
                     const startTimeMinutes = parseFlexibleTimeToMinutes(timeStr);
@@ -1222,6 +1299,8 @@ export default function MeetingsHub({
                       statusLabel = "Completed";
                       statusColor = "bg-gray-100 text-gray-700 border-gray-250";
                     }
+
+                    const index = meetingTimeStatus === "Completed" ? rawRecord : (hasRealCheckIn ? rawRecord : undefined);
 
                     return (
                       <div 
@@ -1327,27 +1406,66 @@ export default function MeetingsHub({
 
       {/* Attendance summary statistics widget */}
       <div className="bg-[#F8FAF8] rounded-xl p-4 border border-gray-200" id="meetings-punctuality-panel">
-        <h3 className="font-bold text-gray-800 text-xs uppercase mb-3">Your Daily Sync Attendance Progress</h3>
-        <div className="grid grid-cols-3 gap-4 text-center">
-          <div className="bg-white p-3 rounded-xl border border-gray-150">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div>
+            <h3 className="font-bold text-gray-800 text-xs uppercase">Your Daily Sync Attendance Progress</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Real-time punctuality tracking for your assigned stand-ups and sprint syncs</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-[#4B5E40] bg-[#4B5E40]/10 px-2.5 py-1 rounded-md">
+              Today: {lagosTodayStr}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 text-center mb-3">
+          <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-2xs">
             <span className="block text-xl font-bold text-emerald-600">
               {dynamicOnTimeCount}
             </span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">On-Time</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Today On-Time</span>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-gray-150">
+          <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-2xs">
             <span className="block text-xl font-bold text-amber-500">
               {dynamicLateCount}
             </span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Late (&gt;{lateThresh}m)</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Today Late (&gt;{lateThresh}m)</span>
           </div>
-          <div className="bg-white p-3 rounded-xl border border-gray-150">
+          <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-2xs">
             <span className="block text-xl font-bold text-rose-500">
               {dynamicMissedCount}
             </span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Missed</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">Today Missed</span>
           </div>
         </div>
+
+        {totalAllTimeSyncs > 0 && (
+          <div className="pt-3 border-t border-gray-200/70 flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-gray-600 gap-2">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <span className="font-medium text-gray-700">All-Time Syncs: <strong className="text-gray-900">{totalAllTimeSyncs}</strong></span>
+              <span>•</span>
+              <span className="text-emerald-700 font-semibold">{allTimeOnTimeCount} On-Time</span>
+              <span>•</span>
+              <span className="text-amber-700 font-semibold">{allTimeLateCount} Late</span>
+              {allTimeMissedCount > 0 && (
+                <>
+                  <span>•</span>
+                  <span className="text-rose-700 font-semibold">{allTimeMissedCount} Missed</span>
+                </>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 font-bold">
+              <span className="text-gray-500">Overall Punctuality:</span>
+              <span className={`px-2 py-0.5 rounded-full text-xs ${
+                overallPunctualityRate >= 80 ? "bg-emerald-100 text-emerald-800" :
+                overallPunctualityRate >= 60 ? "bg-amber-100 text-amber-800" :
+                "bg-rose-100 text-rose-800"
+              }`}>
+                {overallPunctualityRate}%
+              </span>
+            </div>
+          </div>
+        )}
       </div>
         </>
       )}

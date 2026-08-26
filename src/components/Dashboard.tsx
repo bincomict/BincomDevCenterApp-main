@@ -158,6 +158,8 @@ export default function Dashboard({
 
   const standupDetails = getStandupDetails(profile.track);
 
+  const lagosTodayStr = getLagosDateString(currentTime);
+
   const getAttendanceForMeeting = (meetingIdOrObj: any, meetingObj?: any) => {
     let target: any;
     if (typeof meetingIdOrObj === "object" && meetingIdOrObj !== null) {
@@ -167,7 +169,7 @@ export default function Dashboard({
     } else {
       target = { id: meetingIdOrObj, meetingId: meetingIdOrObj };
     }
-    const matches = (attendance || []).filter((a: any) => isMatchingLogForMeetingAndUser(a, target, profile));
+    const matches = (attendance || []).filter((a: any) => isMatchingLogForMeetingAndUser(a, target, profile, lagosTodayStr));
     if (matches.length === 0) return undefined;
     const attendedOrLate = matches.find((a: any) => {
       const s = (a.status || "").toLowerCase();
@@ -634,7 +636,9 @@ export default function Dashboard({
   });
 
   const renderMeetingCard = (p: any) => {
-    const checkedIn = getAttendanceForMeeting(p.id);
+    const rawRecord = getAttendanceForMeeting(p);
+    const hasRealCheckIn = rawRecord && !String(rawRecord.status || "").toLowerCase().includes("miss") && !String(rawRecord.status || "").toLowerCase().includes("absent");
+    const checkedIn = hasRealCheckIn ? rawRecord : undefined;
     const isNew = isNewMeeting(p.createdAt);
 
     const startTimeStr = p.timeString || p.time || "";
@@ -661,7 +665,7 @@ export default function Dashboard({
     }
 
     // Get exact attendance log status for attendance history display
-    const record = getAttendanceForMeeting(p);
+    const record = meetingTimeStatus === "Completed" ? rawRecord : checkedIn;
     let attendanceText = "";
     let attendanceColor = "";
     if (record) {
