@@ -131,13 +131,28 @@ export default function MeetingsHub({
   const isAdmin = profile.role === "admin";
 
   const parseFlexibleTimeToMinutes = (timeStr: string): number => {
-    if (!timeStr) return 0;
+    if (!timeStr) return 540;
     let clean = timeStr.replace(/\s*WAT\s*$/i, "").trim().toUpperCase();
-    const match = clean.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
-    if (!match) return 0;
+    const firstPart = clean.split("-")[0].trim();
+    const hasPM = clean.includes("PM");
+    const hasAM = clean.includes("AM");
+
+    const match = firstPart.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+    if (!match) {
+      const fallbackMatch = clean.match(/(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+      if (!fallbackMatch) return 540;
+      let hours = parseInt(fallbackMatch[1], 10);
+      const minutes = fallbackMatch[2] ? parseInt(fallbackMatch[2], 10) : 0;
+      const ampm = fallbackMatch[3] || (hasPM ? "PM" : (hasAM ? "AM" : undefined));
+      if (ampm === "PM" && hours < 12) hours += 12;
+      if (ampm === "AM" && hours === 12) hours = 0;
+      if (!ampm && hours < 8) hours += 12;
+      return hours * 60 + minutes;
+    }
+
     let hours = parseInt(match[1], 10);
     const minutes = match[2] ? parseInt(match[2], 10) : 0;
-    const ampm = match[3];
+    const ampm = match[3] || (hasPM ? "PM" : (hasAM ? "AM" : undefined));
     if (ampm) {
       if (ampm === "PM" && hours < 12) hours += 12;
       if (ampm === "AM" && hours === 12) hours = 0;
@@ -630,7 +645,9 @@ export default function MeetingsHub({
       if (record.id) countedAttendanceIds.add(record.id);
       const s = String(record.status || "").trim().toLowerCase();
       if (s === "missed" || s === "absent") {
-        dynamicMissedCount++;
+        if (lagosCurrentMinutes >= endTimeMinutes && endTimeMinutes > 0) {
+          dynamicMissedCount++;
+        }
       } else if (s.includes("very late") || s.includes("late")) {
         dynamicLateCount++;
       } else if (record.timestamp) {

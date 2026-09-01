@@ -95,16 +95,18 @@ export const isMatchingLogForMeeting = (log: any, targetMeeting: any, targetDate
   const mBase = getBaseMeetingId(mId) || getBaseMeetingId(mMeetingId) || getBaseMeetingId(mSeriesId);
 
   if (lBase && mBase && lBase === mBase) return true;
-  if (lMeetingId && mId && (lMeetingId.includes(mId) || mId.includes(lMeetingId))) return true;
-  if (lBase && mBase && (lBase.includes(mBase) || mBase.includes(lBase))) return true;
-  if (mId && lLogId && lLogId.includes(mId)) return true;
-  if (mBase && lLogId && lLogId.includes(mBase)) return true;
 
-  // Title matches
+  // Structured Log ID match (e.g. att_meet_1_... or att_missed_meet_1_...)
+  if (mId && (lLogId.startsWith(`att_${mId}_`) || lLogId.startsWith(`att_missed_${mId}_`))) return true;
+  if (mMeetingId && (lLogId.startsWith(`att_${mMeetingId}_`) || lLogId.startsWith(`att_missed_${mMeetingId}_`))) return true;
+  if (mSeriesId && (lLogId.startsWith(`att_${mSeriesId}_`) || lLogId.startsWith(`att_missed_${mSeriesId}_`))) return true;
+  if (mBase && (lLogId.startsWith(`att_${mBase}_`) || lLogId.startsWith(`att_missed_${mBase}_`))) return true;
+
+  // Title matches (Exact normalized title match ONLY to prevent cross-meeting pollution)
   if (lTitle && mTitle) {
     const cleanL = cleanMeetingTitle(lTitle);
     const cleanM = cleanMeetingTitle(mTitle);
-    if (cleanL && cleanM && (cleanL === cleanM || cleanL.includes(cleanM) || cleanM.includes(cleanL))) return true;
+    if (cleanL && cleanM && cleanL === cleanM) return true;
   }
 
   return false;

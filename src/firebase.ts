@@ -79,6 +79,8 @@ async function verifyConnectivity() {
     const errMsg = String(err.message || err).toLowerCase();
     if (errMsg.includes("offline") || errMsg.includes("unavailable")) {
       console.warn("⚠️ Firestore transient connection notice:", errMsg);
+    } else if (errMsg.includes("resource-exhausted") || errMsg.includes("quota")) {
+      console.warn("⚠️ Firestore daily free-tier quota reached. Application will use cached/local state.");
     } else {
       console.warn("⚠️ Firestore connectivity check response:", errMsg);
     }

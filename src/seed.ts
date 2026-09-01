@@ -323,9 +323,11 @@ export async function seedDatabase(force = false) {
           needsCommit = true;
         }
       } catch (err: any) {
-        const isOffline = err?.message?.toLowerCase().includes("offline") || err?.code === "unavailable";
-        if (isOffline) {
-          console.warn("Firestore is currently offline. Skipping auto-seeding until online connection is established: " + err.message);
+        const errMsg = String(err?.message || err).toLowerCase();
+        const isOffline = errMsg.includes("offline") || err?.code === "unavailable";
+        const isQuota = errMsg.includes("resource-exhausted") || errMsg.includes("quota");
+        if (isOffline || isQuota) {
+          console.warn("Skipping auto-seeding due to connection/quota state: " + (err.message || err));
           return false;
         }
         throw err;
@@ -341,9 +343,11 @@ export async function seedDatabase(force = false) {
     console.log("All default data already seeded. Skipping...");
     return false;
   } catch (error: any) {
-    const isOffline = error?.message?.toLowerCase().includes("offline") || error?.code === "unavailable";
-    if (isOffline) {
-      console.warn("Firestore is offline. Seeding skipped or postponed: " + error.message);
+    const errMsg = String(error?.message || error).toLowerCase();
+    const isOffline = errMsg.includes("offline") || error?.code === "unavailable";
+    const isQuota = errMsg.includes("resource-exhausted") || errMsg.includes("quota");
+    if (isOffline || isQuota) {
+      console.warn("Firestore offline/quota reached. Seeding skipped: " + (error.message || error));
       return false;
     }
     console.error("Error seeding database:", error);

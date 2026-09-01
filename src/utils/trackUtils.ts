@@ -325,32 +325,56 @@ export const parseDurationToMinutes = (durationStr?: string): number => {
   return value;
 };
 
-export const parseMeetingTimeToMinutes = (timeStr: string, lagosToday: string): number => {
-  if (!timeStr) return 0;
+export const parseMeetingTimeToMinutes = (timeStr: string, lagosToday?: string): number => {
+  if (!timeStr) return 540; // Default 09:00 AM
+
+  const clean = String(timeStr).replace(/\s*WAT\s*$/i, "").trim();
+  if (!clean) return 540;
 
   // Check if there is specific weekday Override in the string, like "(Friday: 03:00 PM)"
-  const weekdayLower = lagosToday.toLowerCase();
-  const overrideRegex = new RegExp(`(?:${weekdayLower}|${weekdayLower.substring(0, 3)})\\s*[:.]\\s*(\\d+)[:.](\\d+)\\s*(AM|PM)`, "i");
-  const overrideMatch = timeStr.match(overrideRegex);
-  if (overrideMatch) {
-    let hours = parseInt(overrideMatch[1], 10);
-    const minutes = parseInt(overrideMatch[2], 10);
-    const ampm = overrideMatch[3].toUpperCase();
+  if (lagosToday) {
+    const weekdayLower = String(lagosToday).toLowerCase();
+    const overrideRegex = new RegExp(`(?:${weekdayLower}|${weekdayLower.substring(0, 3)})\\s*[:.]\\s*(\\d+)(?:[:.](\\d+))?\\s*(AM|PM)?`, "i");
+    const overrideMatch = clean.match(overrideRegex);
+    if (overrideMatch) {
+      let hours = parseInt(overrideMatch[1], 10);
+      const minutes = overrideMatch[2] ? parseInt(overrideMatch[2], 10) : 0;
+      const ampm = overrideMatch[3] ? overrideMatch[3].toUpperCase() : undefined;
+      if (ampm === "PM" && hours < 12) hours += 12;
+      if (ampm === "AM" && hours === 12) hours = 0;
+      if (!ampm && hours < 8) hours += 12;
+      return hours * 60 + minutes;
+    }
+  }
+
+  // Extract start time segment before any hyphen or dash
+  const firstPart = clean.split("-")[0].trim().toUpperCase();
+  const hasPM = clean.toUpperCase().includes("PM");
+  const hasAM = clean.toUpperCase().includes("AM");
+
+  const match = firstPart.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+  if (!match) {
+    const fallbackMatch = clean.match(/(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+    if (!fallbackMatch) return 540; // Default 09:00 AM
+    let hours = parseInt(fallbackMatch[1], 10);
+    const minutes = fallbackMatch[2] ? parseInt(fallbackMatch[2], 10) : 0;
+    const ampm = fallbackMatch[3] ? fallbackMatch[3].toUpperCase() : (hasPM ? "PM" : (hasAM ? "AM" : undefined));
     if (ampm === "PM" && hours < 12) hours += 12;
     if (ampm === "AM" && hours === 12) hours = 0;
+    if (!ampm && hours < 8) hours += 12;
     return hours * 60 + minutes;
   }
 
-  // Strip trailing ' WAT' or any timezone info if present
-  const cleanTimeStr = timeStr.replace(/\s*WAT\s*$/i, "").trim();
-  const match = cleanTimeStr.match(/(\d+)[:.](\d+)\s*(AM|PM)/i);
-  if (!match) return 0;
   let hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const ampm = match[3].toUpperCase();
-  if (ampm === "PM" && hours < 12) hours += 12;
-  if (ampm === "AM" && hours === 12) hours = 0;
-  return hours * 60 + minutes;
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const partAmpm = match[3] ? match[3].toUpperCase() : (hasPM ? "PM" : (hasAM ? "AM" : undefined));
+
+  if (partAmpm === "PM" && hours < 12) hours += 12;
+  if (partAmpm === "AM" && hours === 12) hours = 0;
+  if (!partAmpm && hours < 8) hours += 12;
+
+  const result = hours * 60 + minutes;
+  return isNaN(result) ? 540 : result;
 };
 
 export const getLagosDateString = (date: Date): string => {
@@ -413,6 +437,67 @@ export const formatMeetingDates = (meeting: any): string => {
   return "Not Scheduled";
 };
 
+export const getLagosDayOfWeek = (date: Date): string => {
+  try {
+    return date.toLocaleDateString("en-US", {
+      timeZone: "Africa/Lagos",
+      weekday: "long"
+    });
+  } catch {
+    const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return days[date.getDay()];
+  }
+};
+
+export const isMeetingScheduledForDate = (meeting: any, dateStr: string): boolean => {
+  if (!meeting || !dateStr) return false;
+
+  const targetDate = String(dateStr).trim().substring(0, 10);
+  if (!targetDate) return false;
+
+  // 1. Direct match on occurrenceDate or date
+  const mOccDate = (meeting.occurrenceDate || meeting.date || meeting.meetingDate || "").toString().trim().substring(0, 10);
+  if (mOccDate && mOccDate === targetDate) {
+    return true;
+  }
+
+  // 2. Check if targetDate is in meetingDates array
+  if (Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
+    const hasExplicitDate = meeting.meetingDates.some(
+      (d: string) => String(d).trim().substring(0, 10) === targetDate
+    );
+    if (hasExplicitDate) return true;
+    // If specific dates are specified without recurring scheduleDays, it only occurs on those dates
+    if (!meeting.scheduleDays || meeting.scheduleDays.length === 0) {
+      return false;
+    }
+  }
+
+  // 3. Recurring schedule by day-of-week
+  let dayOfWeek = "";
+  try {
+    const parts = targetDate.split("-").map(Number);
+    const dateObj = new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0);
+    dayOfWeek = getLagosDayOfWeek(dateObj);
+  } catch {
+    return false;
+  }
+
+  if (Array.isArray(meeting.scheduleDays) && meeting.scheduleDays.length > 0) {
+    return meeting.scheduleDays.some(
+      (day: string) => String(day).trim().toLowerCase() === dayOfWeek.toLowerCase()
+    );
+  }
+
+  // 4. Default for active recurring meetings without explicit scheduleDays is Monday-Friday
+  if (meeting.isActive === true || meeting.isRecurring === true) {
+    const weekendDays = ["saturday", "sunday"];
+    return !weekendDays.includes(dayOfWeek.toLowerCase());
+  }
+
+  return false;
+};
+
 export const shouldShowMeetingOnDashboard = (
   meeting: any,
   lagosToday: string,
@@ -447,25 +532,7 @@ export const shouldShowMeetingOnDashboard = (
 
   // Check if meeting is scheduled for today (WAT timezone)
   const todayStr = getLagosDateString(new Date());
-  let isToday = false;
-  if (meeting.occurrenceDate && meeting.occurrenceDate === todayStr) {
-    isToday = true;
-  } else if (meeting.meetingDates && Array.isArray(meeting.meetingDates) && meeting.meetingDates.length > 0) {
-    isToday = meeting.meetingDates.includes(todayStr);
-  } else {
-    const days = meeting.scheduleDays && meeting.scheduleDays.length > 0 
-      ? meeting.scheduleDays 
-      : ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-      
-    isToday = days.some((day: string) => day.trim().toLowerCase() === lagosToday.toLowerCase());
-  }
-
-  if (!isToday) {
-    return false;
-  }
-
-  // Completed and active meetings for today remain visible on the user's dashboard throughout that day until midnight
-  return true;
+  return isMeetingScheduledForDate(meeting, todayStr);
 };
 
 export const DEFAULT_KD_COMPULSORY_LEVELS = [

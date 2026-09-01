@@ -641,7 +641,7 @@ export default function Dashboard({
     const checkedIn = hasRealCheckIn ? rawRecord : undefined;
     const isNew = isNewMeeting(p.createdAt);
 
-    const startTimeStr = p.timeString || p.time || "";
+    const startTimeStr = p.timeString || p.time || p.scheduledStartTime || p.startTime || "09:00 AM";
     const startMins = parseMeetingTimeToMinutes(startTimeStr, lagosToday);
     const durationMins = parseDurationToMinutes(p.duration || "60 minutes");
     const endMins = startMins + durationMins;

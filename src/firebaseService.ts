@@ -28,7 +28,7 @@ import {
 import { db, auth } from "./firebase";
 import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment, MeetingHistoryRecord, QueuedMeetingUpdate, KnowledgeDevelopmentInfo, defaultKnowledgeDevelopmentInfo, KDPresentation, AttendancePunctualityConfig, defaultAttendancePunctualityConfig } from "./types";
 import { isMatchingLogForMeetingAndUser, isMatchingLogForMeeting, normalizeDateStr, getBaseMeetingId } from "./utils/meetingUtils";
-import { isUserTrackEligibleForMeeting, isUserLevelEligibleForMeeting, getCleanTrackName } from "./utils/trackUtils";
+import { isUserTrackEligibleForMeeting, isUserLevelEligibleForMeeting, getCleanTrackName, isMeetingScheduledForDate } from "./utils/trackUtils";
 
 export enum OperationType {
   CREATE = 'create',
@@ -81,7 +81,8 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
   if (isQuotaError) {
     markQuotaExhausted();
-    console.error("🛑 CRITICAL: Firestore Quota Exceeded (resource-exhausted). Automatically backing off from active queries and automated sync checks to prevent tight-loop retries.");
+    console.warn("⚠️ Firestore free-tier daily quota limit reached (resource-exhausted). Switching seamlessly to cached/local application data.");
+    return;
   }
 
   const errInfo: FirestoreErrorInfo = {
@@ -159,7 +160,7 @@ export const getLagosDayOfWeek = (date: Date): string => {
 };
 
 export const parseMeetingTimeToMinutes = (timeStr: string): number => {
-  if (!timeStr) return 0;
+  if (!timeStr) return 540;
   let clean = timeStr.replace(/\s*WAT\s*$/i, "").trim().toUpperCase();
   
   // Extract start time segment before any hyphen or dash
@@ -168,7 +169,17 @@ export const parseMeetingTimeToMinutes = (timeStr: string): number => {
   const hasAM = clean.includes("AM");
 
   const match = firstPart.match(/^(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
-  if (!match) return 0;
+  if (!match) {
+    const fallbackMatch = clean.match(/(\d+)(?:[:.](\d+))?\s*(AM|PM)?/i);
+    if (!fallbackMatch) return 540;
+    let hours = parseInt(fallbackMatch[1], 10);
+    const minutes = fallbackMatch[2] ? parseInt(fallbackMatch[2], 10) : 0;
+    const ampm = fallbackMatch[3] || (hasPM ? "PM" : (hasAM ? "AM" : undefined));
+    if (ampm === "PM" && hours < 12) hours += 12;
+    if (ampm === "AM" && hours === 12) hours = 0;
+    if (!ampm && hours < 8) hours += 12;
+    return hours * 60 + minutes;
+  }
   
   let hours = parseInt(match[1], 10);
   const minutes = match[2] ? parseInt(match[2], 10) : 0;
@@ -178,7 +189,8 @@ export const parseMeetingTimeToMinutes = (timeStr: string): number => {
   if (partAmpm === "AM" && hours === 12) hours = 0;
   if (!partAmpm && hours < 8) hours += 12;
 
-  return hours * 60 + minutes;
+  const result = hours * 60 + minutes;
+  return isNaN(result) ? 540 : result;
 };
 
 export const getLagosMinutesPastMidnight = (date: Date): number => {
@@ -299,42 +311,75 @@ export const listenToAuthChanges = (onUserLoaded: (profile: Profile | null) => v
 export const isUserEligibleForMeetingInBackend = (user: any, meeting: any, assignments: any[] = []): boolean => {
   if (!user || user.role === "admin") return false;
 
-  // 1. Explicitly assigned via backend meetingAssignments
-  const isAssigned = (assignments || []).some((ma: any) => {
+  const uId = String(user.id || "").toLowerCase().trim();
+  const uName = String(user.username || "").toLowerCase().trim();
+  const uUid = String(user.uid || "").toLowerCase().trim();
+  const uEmail = String(user.email || "").toLowerCase().trim();
+
+  const mId = String(meeting.id || meeting.meetingId || "").toLowerCase().trim();
+  const mSeriesId = String(meeting.seriesId || meeting.parentMeetingId || meeting.recurringSeriesId || "").toLowerCase().trim();
+  const mBase = getBaseMeetingId(mId) || getBaseMeetingId(mSeriesId);
+
+  // 1. Check if meeting has explicit direct user assignments (assignedUserIds or meetingAssignments)
+  const directAssignedUserIds = Array.isArray(meeting.assignedUserIds) && meeting.assignedUserIds.length > 0
+    ? meeting.assignedUserIds.map((id: any) => String(id).toLowerCase().trim())
+    : [];
+
+  const explicitAssignmentsForThisMeeting = (assignments || []).filter((ma: any) => {
     if (!ma) return false;
     const maMId = String(ma.meetingId || "").toLowerCase().trim();
-    const maUId = String(ma.userId || "").toLowerCase().trim();
-    const mId = String(meeting.id || "").toLowerCase().trim();
-    const mSeriesId = String(meeting.seriesId || meeting.parentMeetingId || "").toLowerCase().trim();
-    const uId = String(user.id || "").toLowerCase().trim();
-    const uName = String(user.username || "").toLowerCase().trim();
-    const uUid = String(user.uid || "").toLowerCase().trim();
-    const uEmail = String(user.email || "").toLowerCase().trim();
-
-    const meetingMatch = maMId === mId || (mSeriesId && maMId === mSeriesId) || (mId && maMId && (mId.includes(maMId) || maMId.includes(mId)));
-    const userMatch = maUId === uId || maUId === uName || maUId === uUid || maUId === uEmail;
-    return meetingMatch && userMatch;
+    const maBase = getBaseMeetingId(maMId);
+    return maMId === mId || (mSeriesId && maMId === mSeriesId) || (mBase && maBase && mBase === maBase);
   });
-  if (isAssigned) return true;
 
-  // 2. Direct assigned users explicitly specified on the meeting document
-  if (meeting.assignedUserIds && Array.isArray(meeting.assignedUserIds) && meeting.assignedUserIds.length > 0) {
-    return (
-      meeting.assignedUserIds.includes(user.id) ||
-      meeting.assignedUserIds.includes(user.uid) ||
-      meeting.assignedUserIds.includes(user.username)
+  const hasExplicitAssignments = directAssignedUserIds.length > 0 || explicitAssignmentsForThisMeeting.length > 0;
+
+  if (hasExplicitAssignments) {
+    const isDirectAssigned = directAssignedUserIds.some(
+      id => id === uId || id === uUid || id === uName || id === uEmail
     );
+    const isMaAssigned = explicitAssignmentsForThisMeeting.some((ma: any) => {
+      const maUId = String(ma.userId || "").toLowerCase().trim();
+      return maUId === uId || maUId === uName || maUId === uUid || maUId === uEmail;
+    });
+    return isDirectAssigned || isMaAssigned;
+  }
+
+  // 2. Project / Group Restriction (if specified)
+  if (meeting.projectId && meeting.projectId !== "All" && meeting.projectId !== "") {
+    const userProjects = Array.isArray(user.projects) ? user.projects : (user.projectId ? [user.projectId] : []);
+    const projMatch = userProjects.some((p: any) => String(p).toLowerCase().trim() === String(meeting.projectId).toLowerCase().trim());
+    if (!projMatch) return false;
   }
 
   // 3. User Level & Track Eligibility
   const userLevelValue = user.learningLevel || user.techExperience || "Apprentice level 1";
   const userTrackValue = user.track || "";
 
-  const targetTracks = meeting.targetTeamTrackEligibility || meeting.targetTracks || meeting.targetTeams || (meeting.track ? [meeting.track] : []);
-  const rawLevels = meeting.userLevels !== undefined ? meeting.userLevels : meeting.trackId;
+  // Collect target tracks from all possible attributes
+  let targetTracks: any[] = [];
+  if (Array.isArray(meeting.targetTeamTrackEligibility) && meeting.targetTeamTrackEligibility.length > 0) {
+    targetTracks = meeting.targetTeamTrackEligibility;
+  } else if (Array.isArray(meeting.targetTracks) && meeting.targetTracks.length > 0) {
+    targetTracks = meeting.targetTracks;
+  } else if (Array.isArray(meeting.targetTeams) && meeting.targetTeams.length > 0) {
+    targetTracks = meeting.targetTeams;
+  } else if (meeting.trackId) {
+    targetTracks = Array.isArray(meeting.trackId) ? meeting.trackId : [meeting.trackId];
+  } else if (meeting.track) {
+    targetTracks = Array.isArray(meeting.track) ? meeting.track : [meeting.track];
+  }
+
+  // Collect target levels
+  let targetLevels: any[] = [];
+  if (meeting.userLevels !== undefined && meeting.userLevels !== null) {
+    targetLevels = Array.isArray(meeting.userLevels) ? meeting.userLevels : [meeting.userLevels];
+  } else if (meeting.targetLevels !== undefined && meeting.targetLevels !== null) {
+    targetLevels = Array.isArray(meeting.targetLevels) ? meeting.targetLevels : [meeting.targetLevels];
+  }
 
   const trackMatch = isUserTrackEligibleForMeeting(userTrackValue, targetTracks);
-  const levelMatch = isUserLevelEligibleForMeeting(userLevelValue, rawLevels);
+  const levelMatch = isUserLevelEligibleForMeeting(userLevelValue, targetLevels);
 
   return trackMatch && levelMatch;
 };
@@ -382,29 +427,46 @@ export const autoArchiveCompletedMeetings = async (
     }
   };
 
-  // 1. Initial cleanup sweep: delete any premature 'att_missed_' records for future dates or for today's meetings that haven't ended yet
+  const todayDayName = getLagosDayOfWeek(now);
+
+  // 1. Initial cleanup sweep: delete any premature 'att_missed_' records, records on non-scheduled dates, or records for non-eligible users
   for (const a of attendance) {
     const s = String(a.status || "").toLowerCase();
     const isMissedType = s.includes("miss") || s.includes("absent") || String(a.id || "").startsWith("att_missed_");
     if (isMissedType && a.id) {
       const aDate = normalizeDateStr(a.meetingDate || a.date || (a.timestamp ? String(a.timestamp).substring(0, 10) : ""));
+      const matchedUser = profiles.find(p => p.id === a.userId || p.uid === a.userId || (p.username && a.username && p.username.toLowerCase() === a.username.toLowerCase()));
+      const matchedMeeting = meetings.find(m => isMatchingLogForMeeting(a, m)) || meetingHistory.find(h => isMatchingLogForMeeting(a, h));
+
       if (aDate && aDate > todayStr) {
         // Future date - cannot be missed yet!
         pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
-      } else if (aDate && aDate === todayStr) {
-        const matchedMeeting = meetings.find(m => isMatchingLogForMeeting(a, m));
-        if (matchedMeeting) {
+      } else if (!matchedUser || matchedUser.role === "admin") {
+        // Admin or non-existent profile should never have missed records
+        pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
+      } else if (matchedMeeting) {
+        // Verify eligibility
+        const isEligible = isUserEligibleForMeetingInBackend(matchedUser, matchedMeeting, assignments);
+        const isScheduled = aDate ? isMeetingScheduledForDate(matchedMeeting, aDate) : true;
+        if (!isEligible || !isScheduled) {
+          // User is NOT eligible for this meeting or meeting was not scheduled on this date - delete erroneous missed record!
+          pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
+        } else if (aDate === todayStr) {
           const scheduledTimeStr = matchedMeeting.timeString || matchedMeeting.time || matchedMeeting.scheduledStartTime || matchedMeeting.startTime || "09:00 AM";
-          const scheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+          const rawScheduledMins = parseMeetingTimeToMinutes(scheduledTimeStr);
+          const scheduledMins = rawScheduledMins > 0 ? rawScheduledMins : 540;
           const durationStr = matchedMeeting.duration || "30 minutes";
           const matchDuration = durationStr.match(/(\d+)/);
           const durationMins = matchDuration ? parseInt(matchDuration[1], 10) : 30;
           const endMins = scheduledMins + durationMins;
           if (currentMinutes < endMins) {
-            // Meeting hasn't ended yet today - premature missed record!
+            // Meeting hasn't ended yet today (e.g. dropped at midnight or currently upcoming/live) - delete premature missed record!
             pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
           }
         }
+      } else if (aDate === todayStr) {
+        // Orphan missed record for today without matching meeting
+        pushToBatch(() => currentBatch.delete(doc(db, "attendance", a.id)));
       }
     }
   }
@@ -412,6 +474,9 @@ export const autoArchiveCompletedMeetings = async (
   // 2. Process each meeting
   for (const m of meetings) {
     const statusLower = String(m.status || "").trim().toLowerCase();
+
+    // Check if meeting is scheduled for today (WAT timezone)
+    const isScheduledForToday = isMeetingScheduledForDate(m, todayStr);
 
     // Collect dates
     const dates: string[] = [];
@@ -422,27 +487,38 @@ export const autoArchiveCompletedMeetings = async (
       });
     }
 
-    const occurrenceDate = m.occurrenceDate || (m.meetingDates && m.meetingDates[0]) || todayStr;
+    const occurrenceDate = isScheduledForToday 
+      ? todayStr 
+      : (m.occurrenceDate || (m.meetingDates && m.meetingDates[0]) || todayStr);
+
     const historyId = `m-hist-${m.id}-${occurrenceDate}`;
     const needsHistory = !existingHistIds.has(historyId);
 
-    const latestDate = dates.length > 0
-      ? dates.reduce((latest, current) => (current > latest ? current : latest), dates[0])
-      : occurrenceDate;
-
     const scheduledTimeStr = m.timeString || m.time || m.scheduledStartTime || m.startTime || "09:00 AM";
-    const scheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
+    const rawScheduledMinutes = parseMeetingTimeToMinutes(scheduledTimeStr);
+    const scheduledMinutes = rawScheduledMinutes > 0 ? rawScheduledMinutes : 540;
     const durationStr = m.duration || "30 minutes";
     const matchDuration = durationStr.match(/(\d+)/);
     const durationMinutes = matchDuration ? parseInt(matchDuration[1], 10) : 30;
     const endTimeMinutes = scheduledMinutes + durationMinutes;
 
     let isMeetingEnded = false;
-    if (latestDate < todayStr) {
-      isMeetingEnded = true;
-    } else if (latestDate === todayStr) {
-      if (currentMinutes >= endTimeMinutes) {
+    if (isScheduledForToday) {
+      // For meetings scheduled for today, it ONLY ends when current minutes have passed the end time
+      if (currentMinutes >= endTimeMinutes && endTimeMinutes > 0) {
         isMeetingEnded = true;
+      }
+    } else {
+      const latestDate = dates.length > 0
+        ? dates.reduce((latest, current) => (current > latest ? current : latest), dates[0])
+        : occurrenceDate;
+
+      if (latestDate < todayStr) {
+        isMeetingEnded = true;
+      } else if (latestDate === todayStr) {
+        if (currentMinutes >= endTimeMinutes && endTimeMinutes > 0) {
+          isMeetingEnded = true;
+        }
       }
     }
 
@@ -451,7 +527,7 @@ export const autoArchiveCompletedMeetings = async (
       targetStatus = m.status;
     } else if (isMeetingEnded) {
       targetStatus = "Completed";
-    } else if (latestDate === todayStr && currentMinutes >= scheduledMinutes && currentMinutes < endTimeMinutes) {
+    } else if (isScheduledForToday && currentMinutes >= scheduledMinutes && currentMinutes < endTimeMinutes) {
       targetStatus = "Live";
     } else {
       targetStatus = "Upcoming";
@@ -461,7 +537,11 @@ export const autoArchiveCompletedMeetings = async (
     if (shouldUpdateStatus) {
       pushToBatch(() => {
         const docRef = doc(db, "meetings", m.id);
-        currentBatch.update(docRef, { status: targetStatus, updatedAt: new Date().toISOString() });
+        currentBatch.update(docRef, { 
+          status: targetStatus, 
+          occurrenceDate: isScheduledForToday ? todayStr : (m.occurrenceDate || todayStr),
+          updatedAt: new Date().toISOString() 
+        });
       });
     }
 
@@ -477,7 +557,10 @@ export const autoArchiveCompletedMeetings = async (
       continue;
     }
 
-    // IF ENDED: Record history and create missed attendance only for concluded meetings
+    const meetingTargetTracks = m.targetTeamTrackEligibility || m.targetTracks || m.targetTeams || (m.trackId ? (Array.isArray(m.trackId) ? m.trackId : [m.trackId]) : (m.track ? [m.track] : []));
+    const meetingUserLevels = m.userLevels !== undefined ? m.userLevels : (m.trackId || []);
+
+    // IF ENDED: Record history only for concluded meetings
     if (needsHistory && (targetStatus.toLowerCase() === "completed" || targetStatus.toLowerCase() === "archived")) {
       const scheduledEndTimeStr = formatMinutesToMeetingTime(endTimeMinutes);
       const historyData: MeetingHistoryRecord = {
@@ -490,8 +573,8 @@ export const autoArchiveCompletedMeetings = async (
         scheduledEndTime: scheduledEndTimeStr,
         duration: durationStr,
         organizer: m.organizer || "Admin Team",
-        userLevels: m.userLevels || m.trackId || [],
-        targetTeamTrackEligibility: m.targetTeamTrackEligibility || []
+        userLevels: meetingUserLevels,
+        targetTeamTrackEligibility: meetingTargetTracks
       };
 
       pushToBatch(() => {
@@ -515,6 +598,12 @@ export const autoArchiveCompletedMeetings = async (
       }
     });
     
+    // Only generate missed records for meetings that were actually scheduled for this occurrenceDate
+    const meetingOccurredOnDate = isMeetingScheduledForDate(m, occurrenceDate);
+    if (!meetingOccurredOnDate) {
+      continue;
+    }
+
     eligibleUsers.forEach(user => {
       const userAttLogs = attendance.filter(a => isMatchingLogForMeetingAndUser(a, m, user, occurrenceDate));
       const hasRealAttendance = userAttLogs.some(a => {
@@ -565,6 +654,11 @@ export const autoArchiveCompletedMeetings = async (
             meetingId: m.id,
             meetingTitle: m.title,
             meetingType: m.type,
+            scheduledStartTime: scheduledTimeStr,
+            duration: durationStr,
+            organizer: m.organizer || "Admin Team",
+            userLevels: meetingUserLevels,
+            targetTeamTrackEligibility: meetingTargetTracks,
             timestamp: new Date(`${occurrenceDate}T12:00:00Z`).toISOString(),
             status: "Missed",
             track: user.track || "General",
@@ -864,8 +958,17 @@ export const subscribeToAllState = (
       // Re-compile, filter, and dispatch state
       dispatchCompiledState();
     }, (error) => {
-      console.error(`Error in onSnapshot listener for ${colName}:`, error);
-      handleFirestoreError(error, OperationType.LIST, colName);
+      const errMsg = String(error?.message || error).toLowerCase();
+      const isQuotaError = errMsg.includes("resource-exhausted") || errMsg.includes("quota");
+      if (isQuotaError) {
+        markQuotaExhausted();
+        console.warn(`[subscribeToAllState] Quota notice on ${colName} listener. Real-time updates paused; using cached/local data.`);
+        loadedCollections.add(colName);
+        dispatchCompiledState();
+      } else {
+        console.error(`Error in onSnapshot listener for ${colName}:`, error);
+        handleFirestoreError(error, OperationType.LIST, colName);
+      }
     });
   });
 
@@ -878,24 +981,31 @@ export const subscribeToAllState = (
         try {
           snapshot = await getDocsFromCache(colRef);
         } catch (cacheErr) {
-          // Ignore cache query failure, fetch from server next
+          // Ignore cache query failure
         }
-        if (!snapshot || snapshot.empty) {
-          snapshot = await getDocs(colRef);
+        if ((!snapshot || snapshot.empty) && !isQuotaExhausted) {
+          try {
+            snapshot = await getDocs(colRef);
+          } catch (netErr: any) {
+            const errMsg = String(netErr?.message || netErr).toLowerCase();
+            if (errMsg.includes("resource-exhausted") || errMsg.includes("quota")) {
+              markQuotaExhausted();
+            }
+          }
         }
         loadedCollections.add(colName);
-        const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        const docs = snapshot && !snapshot.empty ? snapshot.docs.map(d => ({ id: d.id, ...d.data() })) : [];
         
         if (colName === "profiles") {
           const otherProfiles = docs.filter((p: any) => p.id !== userId);
           const ownLive = state.profiles.find((p: any) => p.id === userId);
-          state.profiles = ownLive ? [ownLive, ...otherProfiles] : docs;
+          state.profiles = ownLive ? [ownLive, ...otherProfiles] : (docs.length > 0 ? docs : [userProfile]);
         } else {
           state[colName] = docs;
         }
         dispatchCompiledState();
       } catch (err: any) {
-        console.warn(`[subscribeToAllState] One-time fetch failed for ${colName}:`, err);
+        console.warn(`[subscribeToAllState] One-time fetch deferred for ${colName}:`, err?.message || err);
         // Fallback to empty array to allow the app to function
         loadedCollections.add(colName);
         if (colName !== "profiles" || state.profiles.length === 0) {
@@ -942,48 +1052,20 @@ export const subscribeToAllState = (
     let returnedAuditLogs = [] as any[];
 
     if (!isAdmin) {
-      returnedAttendance = returnedAttendance.filter(a => a.userId === userId);
-      
-      const userLevelValue = userProfile.learningLevel || userProfile.techExperience || "Apprentice level 1";
-      const userTrackValue = userProfile.track || "";
+      returnedAttendance = returnedAttendance.filter(a => {
+        if (a.userId !== userId && a.username?.toLowerCase() !== userProfile.username?.toLowerCase()) return false;
+        // If it's a missed record, ensure user is actually eligible for that meeting
+        if (String(a.status || "").toLowerCase().includes("miss") || String(a.id || "").startsWith("att_missed_")) {
+          const matchedMeeting = state.meetings.find(m => isMatchingLogForMeeting(a, m)) || state.meetingHistory.find(h => isMatchingLogForMeeting(a, h));
+          if (matchedMeeting) {
+            return isUserEligibleForMeetingInBackend(userProfile, matchedMeeting, state.meetingAssignments || []);
+          }
+        }
+        return true;
+      });
       
       returnedHistory = returnedHistory.filter((h: any) => {
-        const isAssigned = (state.meetingAssignments || []).some(
-          (ma: any) => ma.meetingId === h.meetingId && ma.userId === userId
-        );
-        if (isAssigned) return true;
-
-        const targetTracks = h.targetTeamTrackEligibility;
-        const isGlobalTrack = !targetTracks || (Array.isArray(targetTracks) && targetTracks.length === 0) || targetTracks.includes("All");
-        const rawLevels = h.userLevels;
-        const isGlobalLevel = !rawLevels || (Array.isArray(rawLevels) && rawLevels.length === 0) || rawLevels.includes("All") || rawLevels === "All" || rawLevels === "";
-        const isGlobal = isGlobalTrack && isGlobalLevel;
-        if (isGlobal) return true;
-
-        const trackMatch = (() => {
-          if (userTrackValue.trim().toLowerCase() === "all") return true;
-          if (!targetTracks || targetTracks.length === 0) return true;
-          return targetTracks.some((t: string) => t.trim().toLowerCase() === userTrackValue.trim().toLowerCase() || t.trim().toLowerCase() === "all");
-        })();
-
-        const levelMatch = (() => {
-          if (!rawLevels || rawLevels.length === 0 || rawLevels.includes("All")) return true;
-          return rawLevels.some((l: string) => {
-            const mLevel = l.trim().toLowerCase();
-            const uL = userLevelValue.trim().toLowerCase();
-            return mLevel === uL || mLevel.includes(uL) || uL.includes(mLevel);
-          });
-        })();
-
-        let isEligible = false;
-        if (!isGlobalTrack && !isGlobalLevel) {
-          isEligible = trackMatch && levelMatch;
-        } else if (!isGlobalTrack) {
-          isEligible = trackMatch;
-        } else {
-          isEligible = levelMatch;
-        }
-        return isEligible;
+        return isUserEligibleForMeetingInBackend(userProfile, h, state.meetingAssignments || []);
       });
       returnedProfiles = [userProfile];
     } else {
@@ -1001,69 +1083,28 @@ export const subscribeToAllState = (
     };
 
     onStateUpdated(compiled);
-
-    // Auto-check for completed meetings and update status
-    if (
-      !isQuotaExhausted &&
-      compiled.meetings &&
-      compiled.meetings.length > 0 &&
-      compiled.profiles &&
-      compiled.profiles.length > 0
-    ) {
-      autoArchiveCompletedMeetings(
-        compiled.meetings,
-        compiled.profiles,
-        compiled.attendance,
-        compiled.meetingAssignments,
-        compiled.meetingHistory,
-        compiled.attendancePunctualityConfig
-      ).catch((err) =>
-        console.error("Auto archive state check error:", err)
-      );
-    }
   };
-
-  const autoArchiveCheckInterval = setInterval(() => {
-    if (isQuotaExhausted) return;
-    if (
-      state.meetings &&
-      state.meetings.length > 0 &&
-      state.profiles &&
-      state.profiles.length > 0
-    ) {
-      autoArchiveCompletedMeetings(
-        state.meetings,
-        state.profiles,
-        state.attendance,
-        state.meetingAssignments,
-        state.meetingHistory,
-        state.attendancePunctualityConfig
-      ).catch((err) =>
-        console.error("Auto archive interval check error:", err)
-      );
-    }
-  }, 60000);
 
   const checkInterval = setInterval(() => {
     if (isQuotaExhausted) {
-      console.warn("[subscribeToAllState] Polling bypassed because Firestore free-tier quota is exhausted.");
       return;
     }
 
     // Use the distributed lock transaction to run 12:00 AM midnight sync if needed
     runMidnightSyncIfNeeded(state, loadedCollections, userProfile).catch((err) => {
-      console.error("[subscribeToAllState] Error running distributed lock-based sync:", err);
+      console.warn("[subscribeToAllState] Error running distributed lock-based sync:", err);
     });
-  }, 60000); // Check every 60s for 12:00 AM transition or new day sync
+  }, 120000); // Check every 2 minutes for 12:00 AM transition or new day sync
 
-  // Also trigger immediate check on initial load
-  runMidnightSyncIfNeeded(state, loadedCollections, userProfile).catch((err) => {
-    console.error("[subscribeToAllState] Initial sync check error:", err);
-  });
+  // Also trigger initial check on initial load (only if not quota exhausted)
+  if (!isQuotaExhausted) {
+    runMidnightSyncIfNeeded(state, loadedCollections, userProfile).catch((err) => {
+      console.warn("[subscribeToAllState] Initial sync check skipped/deferred:", err);
+    });
+  }
 
   return () => {
     clearInterval(checkInterval);
-    clearInterval(autoArchiveCheckInterval);
     unsubscribes.forEach(unsub => unsub());
   };
 };
@@ -1085,6 +1126,10 @@ export const runMidnightSyncIfNeeded = async (
   userProfile: Profile | null,
   force: boolean = false
 ): Promise<boolean> => {
+  if (isQuotaExhausted && !force) {
+    return false;
+  }
+
   const now = new Date();
   const todayStr = getLagosDateString(now);
 
@@ -1188,6 +1233,7 @@ export const runMidnightSyncIfNeeded = async (
     if (isNetworkOrOffline) {
       console.warn("[midnightSync] Lock transaction skipped due to transient network/connection state:", err?.message || err);
     } else if (err?.code === "resource-exhausted" || errMsg.includes("quota")) {
+      markQuotaExhausted();
       console.warn("[midnightSync] Resource exhausted / quota exceeded in lock transaction. Skipping sync check...");
     } else {
       console.error("[midnightSync] Transaction or lock-based execution failed:", err);
@@ -1198,23 +1244,21 @@ export const runMidnightSyncIfNeeded = async (
 
 export const subscribeToAuditLogs = (onUpdate: (logs: any[]) => void) => {
   // --- READ OPTIMIZATION: Query date-scoping ---
-  // Approach A: Date-scoping via timestamp comparison (ISO string format on 'timestamp' field)
   const daysAgoISO = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
   const queryRef = query(collection(db, "attendanceAuditLogs"), where("timestamp", ">=", daysAgoISO));
-
-  // Approach B: Date-scoping via string comparison on 'meetingDate' or 'date' field (if exists)
-  // const daysAgoStr = getLagosDateStringDaysAgo(45);
-  // const queryRef = query(collection(db, "attendanceAuditLogs"), where("meetingDate", ">=", daysAgoStr));
-
-  // Note: Older records are still fully preserved in Firestore and only excluded from this real-time listener.
-  // Any full-history view/export should use a separate one-time getDocs() call instead of a live listener.
 
   const unsub = onSnapshot(queryRef, (snapshot) => {
     const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     onUpdate(docs);
   }, (error) => {
-    console.error("Error in onSnapshot listener for attendanceAuditLogs:", error);
-    handleFirestoreError(error, OperationType.LIST, "attendanceAuditLogs");
+    const errMsg = String(error?.message || error).toLowerCase();
+    if (errMsg.includes("resource-exhausted") || errMsg.includes("quota")) {
+      markQuotaExhausted();
+      console.warn("[subscribeToAuditLogs] Quota exceeded on audit logs listener. Listener paused.");
+    } else {
+      console.error("Error in onSnapshot listener for attendanceAuditLogs:", error);
+      handleFirestoreError(error, OperationType.LIST, "attendanceAuditLogs");
+    }
   });
 
   return unsub;
@@ -1226,8 +1270,14 @@ export const subscribeToQueuedUpdates = (onUpdate: (updates: any[]) => void) => 
     const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
     onUpdate(docs);
   }, (error) => {
-    console.error("Error in onSnapshot listener for queuedMeetingUpdates:", error);
-    handleFirestoreError(error, OperationType.LIST, "queuedMeetingUpdates");
+    const errMsg = String(error?.message || error).toLowerCase();
+    if (errMsg.includes("resource-exhausted") || errMsg.includes("quota")) {
+      markQuotaExhausted();
+      console.warn("[subscribeToQueuedUpdates] Quota exceeded on queued updates listener. Listener paused.");
+    } else {
+      console.error("Error in onSnapshot listener for queuedMeetingUpdates:", error);
+      handleFirestoreError(error, OperationType.LIST, "queuedMeetingUpdates");
+    }
   });
 
   return unsub;

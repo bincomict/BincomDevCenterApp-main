@@ -182,23 +182,28 @@ export default function AttendanceHistoryTab({
     const existingHistoryKeys = new Set(rawMeetings.map(m => `${m.meetingId}_${m.date}`));
 
     (state.attendance || []).forEach(att => {
-      const date = att.meetingDate || (att.timestamp ? att.timestamp.substring(0, 10) : "");
+      const date = att.meetingDate || (att.date ? att.date : (att.timestamp ? att.timestamp.substring(0, 10) : ""));
       if (!date) return;
       const key = `${att.meetingId}_${date}`;
       if (!existingHistoryKeys.has(key)) {
         existingHistoryKeys.add(key);
+        const refM = meetingsList.find(mRef => isMatchingLogForMeeting(att, mRef)) as any;
+        const rawTracks = att.targetTeamTrackEligibility || (refM && (refM.targetTeamTrackEligibility || refM.targetTracks || refM.targetTeams || (refM.trackId ? (Array.isArray(refM.trackId) ? refM.trackId : [refM.trackId]) : (refM.track ? [refM.track] : [])))) || [];
+        const resolvedTracks: string[] = Array.isArray(rawTracks) ? rawTracks : [String(rawTracks)];
+        const rawLevels = att.userLevels || (refM && (refM.userLevels !== undefined ? refM.userLevels : refM.trackId)) || [];
+        const resolvedLevels: string[] = Array.isArray(rawLevels) ? rawLevels : [String(rawLevels)];
         rawMeetings.push({
           id: `m-hist-${att.meetingId}-${date}`,
           meetingId: att.meetingId,
-          title: att.meetingTitle,
-          type: att.meetingType || "Alignment Session",
+          title: att.meetingTitle || (refM && refM.title) || "Meeting",
+          type: att.meetingType || (refM && refM.type) || "Alignment Session",
           date: date,
-          scheduledStartTime: att.scheduledStartTime || "09:00 AM",
+          scheduledStartTime: att.scheduledStartTime || (refM && (refM.timeString || refM.time || refM.scheduledStartTime)) || "09:00 AM",
           scheduledEndTime: att.scheduledEndTime || "09:30 AM",
-          duration: att.duration || "30 minutes",
-          organizer: att.organizer || "Admin Team",
-          userLevels: att.userLevels || [],
-          targetTeamTrackEligibility: att.targetTeamTrackEligibility || []
+          duration: att.duration || (refM && refM.duration) || "30 minutes",
+          organizer: att.organizer || (refM && refM.organizer) || "Admin Team",
+          userLevels: resolvedLevels,
+          targetTeamTrackEligibility: resolvedTracks
         });
       }
     });
@@ -210,9 +215,9 @@ export default function AttendanceHistoryTab({
         (mRef.seriesId && mRef.seriesId === m.meetingId) ||
         (m.id && m.id.includes(mRef.id)) ||
         (mRef.title && m.title && mRef.title.trim().toLowerCase() === m.title.trim().toLowerCase())
-      );
+      ) as any;
 
-      const scheduledStartTime = (refMeeting && (refMeeting.timeString || (refMeeting as any).time || (refMeeting as any).scheduledStartTime))
+      const scheduledStartTime = (refMeeting && (refMeeting.timeString || refMeeting.time || refMeeting.scheduledStartTime))
         || m.scheduledStartTime
         || (m as any).timeString
         || (m as any).time
@@ -228,8 +233,10 @@ export default function AttendanceHistoryTab({
       const title = (refMeeting && refMeeting.title) || m.title;
       const type = (refMeeting && refMeeting.type) || m.type || "Alignment Session";
       const organizer = (refMeeting && refMeeting.organizer) || m.organizer || "Admin Team";
-      const userLevels = (refMeeting && (refMeeting.userLevels || refMeeting.trackId)) || m.userLevels || [];
-      const targetTeamTrackEligibility = (refMeeting && refMeeting.targetTeamTrackEligibility) || m.targetTeamTrackEligibility || [];
+      const rawUserLevels = (refMeeting && (refMeeting.userLevels !== undefined ? refMeeting.userLevels : refMeeting.trackId)) || m.userLevels || [];
+      const userLevels: string[] = Array.isArray(rawUserLevels) ? rawUserLevels : [String(rawUserLevels)];
+      const rawTargetTracks = (refMeeting && (refMeeting.targetTeamTrackEligibility || refMeeting.targetTracks || refMeeting.targetTeams || (refMeeting.trackId ? (Array.isArray(refMeeting.trackId) ? refMeeting.trackId : [refMeeting.trackId]) : (refMeeting.track ? [refMeeting.track] : [])))) || m.targetTeamTrackEligibility || [];
+      const targetTeamTrackEligibility: string[] = Array.isArray(rawTargetTracks) ? rawTargetTracks : [String(rawTargetTracks)];
 
       return {
         ...m,

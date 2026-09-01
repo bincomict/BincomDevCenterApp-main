@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Profile, Meeting, AttendanceRecord, WeeklyDrill, WeeklyDrillSubmission, MeetingAssignment } from "./types";
-import { auth } from "./firebase";
+import { auth, firebaseConfig } from "./firebase";
 import { signOut } from "firebase/auth";
 import { listenToAuthChanges, subscribeToAllState, joinMeetingAttendance, dismissReminder, dismissAllReminders, onQuotaStateChanged } from "./firebaseService";
 import { seedDatabase } from "./seed";
@@ -365,16 +365,16 @@ export default function App() {
             <div className="flex items-center gap-2.5 min-w-0">
               <AlertTriangle className="w-5 h-5 text-amber-200 shrink-0" />
               <div className="truncate">
-                <span className="font-bold">Firestore Daily Free-Tier Quota Exceeded:</span> The daily read/write limit for this Firebase project was reached. Displaying local/cached data until quota resets tomorrow.
+                <span className="font-bold">Firestore Daily Free-Tier Quota Exceeded:</span> The daily read/write limit for this Firebase project ({firebaseConfig.projectId}) was reached. Local and cached data are displayed until quota resets tomorrow.
               </div>
             </div>
             <a
-              href="https://console.firebase.google.com/project/ai-studio-bincomdevcenterp-bdcf743b-8150-4a11-9909-0482ce129ca9/firestore/databases/(default)/data?openUpgradeDialog=true"
+              href={`https://console.firebase.google.com/project/${firebaseConfig.projectId || 'bincomcenterapp'}/firestore/databases/(default)/data?openUpgradeDialog=true`}
               target="_blank"
               rel="noopener noreferrer"
               className="bg-white text-amber-900 px-3 py-1 rounded-md text-xs font-bold hover:bg-amber-50 transition shrink-0 underline decoration-amber-300"
             >
-              Open Console
+              Upgrade in Console
             </a>
           </div>
         )}
